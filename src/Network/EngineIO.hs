@@ -19,12 +19,18 @@ module Network.EngineIO
   , parseTransportType
 
     -- Engine.IO protocol
-  , ServerAPI(..)
+  , EngineIO
   , initialize
   , handler
 
+  , getOpenSockets
+
+    -- * ServerAPI
+  , ServerAPI(..)
+
     -- Sockets
-  , Transport
+  , Socket
+  , socketId
   , dequeueMessage
   , enqueueMessage
   ) where
@@ -35,7 +41,7 @@ import Control.Monad (forever, guard, replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Data.Aeson ((.=))
-import Data.Foldable (asum, forM_)
+import Data.Foldable (asum)
 import Data.Ix (inRange)
 import Data.List (foldl')
 import Data.Monoid ((<>), mconcat, mempty)
@@ -57,7 +63,7 @@ import qualified System.Random.MWC as Random
 
 --------------------------------------------------------------------------------
 data PacketType = Open | Close | Ping | Pong | Message | Upgrade | Noop
-  deriving (Eq, Read, Show)
+  deriving (Bounded, Enum, Eq, Read, Show)
 
 
 --------------------------------------------------------------------------------
@@ -116,7 +122,7 @@ parsePayload = Payload <$> go
   go = do
     isString <- (True <$ Attoparsec.word8 0) <|> (False <$ Attoparsec.word8 1)
     len <- parseLength =<< Attoparsec.many1 (Attoparsec.satisfy (inRange (0, 9)))
-    Attoparsec.word8 maxBound
+    _ <- Attoparsec.word8 maxBound
 
     packet <- parsePacket' (Attoparsec.take (len - 1)) -- the type consumes 1 byte
     (V.singleton packet <$ Attoparsec.endOfInput) <|> (V.cons packet <$> go)
@@ -130,9 +136,9 @@ parsePayload = Payload <$> go
 encodePayload :: Payload -> Builder.Builder
 encodePayload (Payload packets) =
   let contents = V.foldl' (\bytes p -> bytes <> encodePacket p) mempty packets
-      length = LBS.length (Builder.toLazyByteString contents)
+      l = LBS.length (Builder.toLazyByteString contents)
   in mconcat [ Builder.word8 0
-             , mconcat $ map (Builder.word8 . read . pure) $ show length
+             , mconcat $ map (Builder.word8 . read . pure) $ show l
              , Builder.word8 maxBound
              , contents
              ]
@@ -168,39 +174,27 @@ parseTransportType t =
 --------------------------------------------------------------------------------
 type SocketId = BS.ByteString
 
-data EngineIOServer = EngineIOServer
-  { eioOpenSessions :: STM.TVar (HashMap.HashMap SocketId Transport)
-  , eioRng :: MVar Random.GenIO
+
+--------------------------------------------------------------------------------
+data Socket = Socket
+  { socketId :: !SocketId
+  , socketRequests :: STM.TChan Packet
+  , socketResponses :: STM.TChan Packet
+  , socketIncomingMessages :: STM.TChan BS.ByteString
+  , socketOutgoingMessages :: STM.TChan BS.ByteString
   }
 
 
 --------------------------------------------------------------------------------
-data Transport = Transport
-  { transportRequests :: STM.TChan Packet
-  , transportResponses :: STM.TChan Packet
-  , transportIncomingMessages :: STM.TChan BS.ByteString
-  , transportOutgoingMessages :: STM.TChan BS.ByteString
-  }
-
-
---------------------------------------------------------------------------------
-dequeueMessage :: Transport -> STM.STM BS.ByteString
-dequeueMessage Transport{..} = STM.readTChan transportIncomingMessages
+dequeueMessage :: Socket -> STM.STM BS.ByteString
+dequeueMessage Socket{..} = STM.readTChan socketIncomingMessages
 {-# INLINE dequeueMessage #-}
 
 
 --------------------------------------------------------------------------------
-enqueueMessage :: Transport -> BS.ByteString -> STM.STM ()
-enqueueMessage Transport{..} = STM.writeTChan transportOutgoingMessages
+enqueueMessage :: Socket -> BS.ByteString -> STM.STM ()
+enqueueMessage Socket{..} = STM.writeTChan socketOutgoingMessages
 {-# INLINE enqueueMessage #-}
-
-
---------------------------------------------------------------------------------
-initialize :: MonadIO m => m EngineIOServer
-initialize = liftIO $
-  EngineIOServer
-    <$> STM.newTVarIO mempty
-    <*> (Random.createSystemRandom >>= newMVar)
 
 
 --------------------------------------------------------------------------------
@@ -214,24 +208,38 @@ data ServerAPI m = ServerAPI
 
 
 --------------------------------------------------------------------------------
-handler
-  :: MonadIO m
-  => EngineIOServer
-  -> (Transport -> IO ())
-  -> ServerAPI m
-  -> m ()
+data EngineIO = EngineIO
+  { eioOpenSessions :: STM.TVar (HashMap.HashMap SocketId Socket)
+  , eioRng :: MVar Random.GenIO
+  }
+
+
+--------------------------------------------------------------------------------
+initialize :: IO EngineIO
+initialize =
+  EngineIO
+    <$> STM.newTVarIO mempty
+    <*> (Random.createSystemRandom >>= newMVar)
+
+
+--------------------------------------------------------------------------------
+getOpenSockets :: EngineIO -> STM.STM (HashMap.HashMap SocketId Socket)
+getOpenSockets = STM.readTVar . eioOpenSessions
+
+
+--------------------------------------------------------------------------------
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
 
   case HashMap.lookup "sid" queryParams of
     Just [sid] -> do
-      socket <- liftIO (STM.atomically (HashMap.lookup sid <$> STM.readTVar (eioOpenSessions eio)))
+      socket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
       case socket of
         Just s -> handleSocket api s
-        Nothing -> undefined
+        Nothing -> error "EngineIO.handle: unknown socket"
 
     Just _ ->
-      undefined
+      error "EngineIO.handle: unknown count of sid arguments"
 
     Nothing ->
       freshSession eio socketHandler api
@@ -240,8 +248,8 @@ handler eio socketHandler api@ServerAPI{..} = do
 --------------------------------------------------------------------------------
 freshSession
   :: MonadIO m
-  => EngineIOServer
-  -> (Transport -> IO ())
+  => EngineIO
+  -> (Socket -> IO ())
   -> ServerAPI m
   -> m ()
 freshSession eio socketHandler api = do
@@ -254,18 +262,19 @@ freshSession eio socketHandler api = do
     requests <- STM.newTChanIO
     responses <- STM.newTChanIO
 
-    Async.async $ forever $ STM.atomically $ asum
+    brain <- Async.async $ forever $ STM.atomically $ asum
       [ do req <- STM.readTChan requests
            case req of
              Packet Message m -> STM.writeTChan incomingMessages m
              _ -> return ()
+
       , STM.readTChan outgoingMessages >>= STM.writeTChan responses . Packet Message
       ]
 
-    let transport = Transport requests responses incomingMessages outgoingMessages
-    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert socketId transport))
+    let socket = Socket socketId requests responses incomingMessages outgoingMessages
+    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert socketId socket))
 
-    Async.async (socketHandler transport)
+    userSpace <- Async.async (socketHandler socket)
 
     return socketId
 
@@ -282,25 +291,25 @@ freshSession eio socketHandler api = do
 
 
 --------------------------------------------------------------------------------
-handleSocket :: MonadIO m => ServerAPI m -> Transport -> m ()
-handleSocket api@ServerAPI{..} Transport{..} = do
+handleSocket :: MonadIO m => ServerAPI m -> Socket -> m ()
+handleSocket api@ServerAPI{..} Socket{..} = do
   requestMethod <- srvGetRequestMethod
   case requestMethod of
     m | m == "GET" -> poll
     m | m == "POST" -> post
-    _ -> undefined
+    _ -> error "EngineIO.handleSocket: unknown method"
 
   where
 
   poll = do
     packets <- liftIO $ STM.atomically $
-      (:) <$> STM.readTChan transportResponses
-          <*> (unfoldM (STM.tryReadTChan transportResponses))
+      (:) <$> STM.readTChan socketResponses
+          <*> (unfoldM (STM.tryReadTChan socketResponses))
     writeBytes api (encodePayload (Payload (V.fromList packets)))
 
   post = do
     Payload packets <- srvParseRequestBody parsePayload
-    liftIO $ STM.atomically (V.mapM_ (STM.writeTChan transportRequests) packets)
+    liftIO $ STM.atomically (V.mapM_ (STM.writeTChan socketRequests) packets)
 
 
 --------------------------------------------------------------------------------
@@ -312,7 +321,7 @@ writeBytes ServerAPI {..} builder = do
 
 
 --------------------------------------------------------------------------------
-newSocketId :: EngineIOServer -> IO SocketId
+newSocketId :: EngineIO -> IO SocketId
 newSocketId eio =
   Base64.encode . BS.pack
     <$> withMVar (eioRng eio) (replicateM 40 . Random.uniformR (0, 63))
