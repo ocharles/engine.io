@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
 module Network.SocketIO
   ( -- * Packet Types
     PacketType(..)
@@ -14,6 +13,9 @@ module Network.SocketIO
 
     -- * Running Socket.IO Applications
   , initialize
+  , Router
+  , EventHandler
+
   , on
   , on_
   , onJSON
@@ -34,12 +36,12 @@ module Network.SocketIO
 import Control.Applicative
 import Control.Monad (forever, guard, mzero, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (MonadReader, asks)
+import Control.Monad.Reader (MonadReader, ask, asks)
 import Control.Monad.State (MonadState, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe (MaybeT, runMaybeT)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import Control.Monad.Trans.State.Strict (execStateT)
+import Control.Monad.Trans.State.Strict (StateT, execStateT)
 import Data.Char (isDigit)
 import Data.Foldable (asum, forM_)
 import Data.Maybe (fromMaybe)
@@ -128,10 +130,18 @@ encodePacket (Packet pt attachments n pId json) =
 
 
 --------------------------------------------------------------------------------
+type Router a = StateT RoutingTable (ReaderT Socket IO) a
+
+
+--------------------------------------------------------------------------------
+type EventHandler a = ReaderT Socket IO a
+
+
+--------------------------------------------------------------------------------
 initialize
   :: MonadIO m
   => EIO.ServerAPI m
-  -> (forall n. (MonadReader Socket n, MonadState RoutingTable n, MonadIO n) => n a)
+  -> Router a
   -> IO (m ())
 initialize api socketHandler = do
   eio <- EIO.initialize
@@ -140,19 +150,26 @@ initialize api socketHandler = do
     mkInitialRoutingTable = execStateT socketHandler (RoutingTable mempty)
 
     eioHandler socket =
-      flip runReaderT (Socket socket eio) $ do
-        emitPacket (Packet Connect Nothing "/" Nothing Nothing)
-        RoutingTable initialRoutingTable <- mkInitialRoutingTable
+      let wrappedSocket = Socket socket eio
+      in flip runReaderT wrappedSocket $ do
+           emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
+           RoutingTable initialRoutingTable <- mkInitialRoutingTable
 
-        forever $ do
-          bytes <- liftIO (STM.atomically (EIO.dequeueMessage socket))
-          case Attoparsec.parseOnly parsePacket bytes of
-            Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
-              case (V.unsafeHead v, V.unsafeTail v) of
-                (Aeson.String name, args) ->
-                  case name `HashMap.lookup` initialRoutingTable of
-                    Just handler -> void (runMaybeT (handler args))
-                    Nothing -> return ()
+           forever $ do
+             bytes <- liftIO (STM.atomically (EIO.dequeueMessage socket))
+             case Attoparsec.parseOnly parsePacket bytes of
+               Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
+                 case (V.unsafeHead v, V.unsafeTail v) of
+                   (Aeson.String name, args) ->
+                     case name `HashMap.lookup` initialRoutingTable of
+                       Just handler -> void (runMaybeT (handler args))
+                       Nothing -> return ()
+
+                   other -> error' $ "Unexpected arguments: " ++ show other
+
+               Right e -> error' $ "Unexpected parse: " ++ show e
+
+               Left e -> error' $ "Attoparsec failed: " ++ show e
 
   return (EIO.handler eio eioHandler api)
 
@@ -171,25 +188,25 @@ data RoutingTable = RoutingTable
 
 --------------------------------------------------------------------------------
 onJSON
-  :: MonadState RoutingTable m
+  :: (MonadState RoutingTable m, Applicative m)
   => Text.Text
-  -> (forall n. (MonadIO n, MonadReader Socket n) => Aeson.Array -> n a)
+  -> (Aeson.Array -> EventHandler a)
   -> m ()
 onJSON eventName handler =
   modify $ \rt -> rt
     { rtEvents =
         HashMap.insertWith (\new old json -> old json <|> new json)
                            eventName
-                           (void . handler)
+                           (void . lift . handler)
                            (rtEvents rt)
     }
 
 
 --------------------------------------------------------------------------------
 on
-  :: (MonadState RoutingTable m, Aeson.FromJSON arg)
+  :: (MonadState RoutingTable m, Aeson.FromJSON arg, Applicative m)
   => Text.Text
-  -> (forall n. (MonadIO n, MonadReader Socket n) => arg -> n a)
+  -> (arg -> EventHandler a)
   -> m ()
 on eventName handler =
   let eventHandler v = do
@@ -209,9 +226,9 @@ on eventName handler =
 
 --------------------------------------------------------------------------------
 on_
-  :: (MonadState RoutingTable m)
+  :: (MonadState RoutingTable m, Applicative m)
   => Text.Text
-  -> (forall n. (MonadIO n, MonadReader Socket n) => n a)
+  -> EventHandler a
   -> m ()
 on_ eventName handler =
   let eventHandler v = guard (V.null v) >> lift handler
