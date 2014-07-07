@@ -360,12 +360,13 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
       Packet Ping "probe" <- lift (receivePacket conn)
       lift (sendPacket conn (Packet Pong "probe"))
 
-      wsIn <- liftIO STM.newTChanIO
-      wsOut <- liftIO STM.newTChanIO
-
-      liftIO $ STM.atomically $ do
+      (wsIn, wsOut) <- liftIO $ STM.atomically $ do
         currentTransport <- STM.readTVar (socketTransport socket)
         STM.writeTChan (transOut currentTransport) (Packet Noop BS.empty)
+
+        wsIn <- STM.dupTChan (transIn currentTransport)
+        wsOut <- STM.newTChan
+        return (wsIn, wsOut)
 
       Packet Upgrade bytes <- lift (receivePacket conn)
       guard (bytes == BS.empty)
