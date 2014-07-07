@@ -59,6 +59,7 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
+import qualified Network.WebSockets as WebSockets
 import qualified System.Random.MWC as Random
 
 --------------------------------------------------------------------------------
@@ -176,10 +177,17 @@ type SocketId = BS.ByteString
 
 
 --------------------------------------------------------------------------------
+data Transport = Transport
+  { transIn :: STM.TChan Packet
+  , transOut :: STM.TChan Packet
+  , transType :: !TransportType
+  }
+
+
+--------------------------------------------------------------------------------
 data Socket = Socket
   { socketId :: !SocketId
-  , socketRequests :: STM.TChan Packet
-  , socketResponses :: STM.TChan Packet
+  , socketTransport :: STM.TVar Transport
   , socketIncomingMessages :: STM.TChan BS.ByteString
   , socketOutgoingMessages :: STM.TChan BS.ByteString
   }
@@ -204,6 +212,7 @@ data ServerAPI m = ServerAPI
   , srvSetContentType :: BS.ByteString -> m ()
   , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m a
   , srvGetRequestMethod :: m BS.ByteString
+  , srvRunWebSocket :: WebSockets.ServerApp -> m ()
   }
 
 
@@ -228,15 +237,27 @@ getOpenSockets = STM.readTVar . eioOpenSessions
 
 
 --------------------------------------------------------------------------------
+handler :: MonadIO m => EngineIO -> (Socket -> IO ()) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
 
   case HashMap.lookup "sid" queryParams of
     Just [sid] -> do
-      socket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
-      case socket of
-        Just s -> handleSocket api s
-        Nothing -> error "EngineIO.handle: unknown socket"
+      case HashMap.lookup "transport" queryParams of
+        Just [tStr] ->
+          case parseTransportType (Text.decodeUtf8 tStr) of
+            Just reqTransport -> do
+              socket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
+              case socket of
+                Just s -> do
+                  transport <- liftIO $ STM.atomically $ STM.readTVar (socketTransport s)
+                  case transType transport of
+                    Polling
+                      | reqTransport == Polling -> handlePoll api transport
+                      | reqTransport == Websocket -> upgrade api s
+
+        Nothing ->
+          error "EngineIO.handle: unknown socket"
 
     Just _ ->
       error "EngineIO.handle: unknown count of sid arguments"
@@ -256,22 +277,32 @@ freshSession eio socketHandler api = do
   socketId <- liftIO $ do
     socketId <- newSocketId eio
 
-    incomingMessages <- STM.newTChanIO
-    outgoingMessages <- STM.newTChanIO
+    socket <- Socket <$> pure socketId
+                     <*> (do transport <- Transport <$> STM.newTChanIO
+                                                    <*> STM.newTChanIO
+                                                    <*> pure Polling
+                             STM.newTVarIO transport)
+                     <*> STM.newTChanIO
+                     <*> STM.newTChanIO
 
-    requests <- STM.newTChanIO
-    responses <- STM.newTChanIO
+    brain <- Async.async $ forever $ STM.atomically $ do
+      transport <- STM.readTVar (socketTransport socket)
+      asum
+        [ do req <- STM.readTChan (transIn transport)
+             case req of
+               Packet Message m ->
+                 STM.writeTChan (socketIncomingMessages socket) m
 
-    brain <- Async.async $ forever $ STM.atomically $ asum
-      [ do req <- STM.readTChan requests
-           case req of
-             Packet Message m -> STM.writeTChan incomingMessages m
-             _ -> return ()
+               Packet Ping m ->
+                 STM.writeTChan (transOut transport) (Packet Pong m)
 
-      , STM.readTChan outgoingMessages >>= STM.writeTChan responses . Packet Message
-      ]
+               _ -> return ()
 
-    let socket = Socket socketId requests responses incomingMessages outgoingMessages
+        , STM.readTChan (socketOutgoingMessages socket)
+            >>= STM.writeTChan (transOut transport) . Packet Message
+        ]
+
+
     STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert socketId socket))
 
     userSpace <- Async.async (socketHandler socket)
@@ -279,7 +310,7 @@ freshSession eio socketHandler api = do
     return socketId
 
   let openMessage = OpenMessage { omSocketId = socketId
-                                , omUpgrades = []
+                                , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }
@@ -291,8 +322,58 @@ freshSession eio socketHandler api = do
 
 
 --------------------------------------------------------------------------------
-handleSocket :: MonadIO m => ServerAPI m -> Socket -> m ()
-handleSocket api@ServerAPI{..} Socket{..} = do
+upgrade ServerAPI{..} socket = srvRunWebSocket go
+
+  where
+
+  go pending = do
+    conn <- WebSockets.acceptRequest pending
+    do
+      p1 <- receivePacket conn
+      case p1 of
+        Packet Ping "probe" -> do
+          sendPacket conn (Packet Pong "probe")
+
+    wsIn <- STM.newTChanIO
+    wsOut <- STM.newTChanIO
+
+    let wsTransport = Transport wsIn wsOut Websocket
+
+    STM.atomically $ do
+      currentTransport <- STM.readTVar (socketTransport socket)
+      STM.writeTChan (transOut currentTransport) (Packet Noop BS.empty)
+
+    do
+      p2 <- receivePacket conn
+      case p2 of
+        Packet Upgrade bytes
+          | bytes == BS.empty -> return ()
+
+    -- The client has completed the upgrade, so we can swap out the current
+    -- transport with a WebSocket transport.
+    STM.atomically (STM.writeTVar (socketTransport socket) wsTransport)
+
+    Async.async $ forever $
+      receivePacket conn >>= STM.atomically . STM.writeTChan wsIn
+
+    forever $ do
+      p <- STM.atomically (STM.readTChan wsOut)
+      sendPacket conn p
+
+  receivePacket conn = do
+    msg <- WebSockets.receiveDataMessage conn
+    case msg of
+     WebSockets.Text bytes ->
+       let Right p = Attoparsec.parseOnly parsePacket (LBS.toStrict bytes)
+       in return p
+
+  sendPacket conn p = do
+    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket p))
+
+
+--------------------------------------------------------------------------------
+handlePoll :: MonadIO m => ServerAPI m -> Transport -> m ()
+handlePoll api@ServerAPI{..} transport = do
   requestMethod <- srvGetRequestMethod
   case requestMethod of
     m | m == "GET" -> poll
@@ -302,14 +383,16 @@ handleSocket api@ServerAPI{..} Socket{..} = do
   where
 
   poll = do
-    packets <- liftIO $ STM.atomically $
-      (:) <$> STM.readTChan socketResponses
-          <*> (unfoldM (STM.tryReadTChan socketResponses))
+    let out = transOut transport
+    packets <- liftIO $
+      (:) <$> STM.atomically (STM.readTChan out)
+          <*> unfoldM (STM.atomically (STM.tryReadTChan (transOut transport)))
+
     writeBytes api (encodePayload (Payload (V.fromList packets)))
 
   post = do
     Payload packets <- srvParseRequestBody parsePayload
-    liftIO $ STM.atomically (V.mapM_ (STM.writeTChan socketRequests) packets)
+    liftIO $ STM.atomically (V.mapM_ (STM.writeTChan (transIn transport)) packets)
 
 
 --------------------------------------------------------------------------------
