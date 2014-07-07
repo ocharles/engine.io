@@ -31,4 +31,6 @@ snapAPI = EIO.ServerAPI
         Snap.POST -> "POST"
 
   , EIO.srvRunWebSocket = Snap.runWebSocketsSnap
+
+  , EIO.srvSetResponseCode = Snap.modifyResponse . Snap.setResponseCode
   }
