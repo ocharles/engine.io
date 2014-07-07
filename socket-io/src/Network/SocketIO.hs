@@ -22,6 +22,8 @@ module Network.SocketIO
 
   , emit
   , emitJSON
+  , emitTo
+  , emitJSONTo
 
   , broadcast
   , broadcastJSON
@@ -46,6 +48,7 @@ import Data.Char (isDigit)
 import Data.Foldable (asum, forM_)
 import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>), mempty)
+import Data.Ord (comparing)
 
 import qualified Control.Concurrent.STM as STM
 import qualified Data.Aeson as Aeson
@@ -53,6 +56,7 @@ import qualified Data.Attoparsec.ByteString as Attoparsec
 import qualified Data.Attoparsec.ByteString.Char8 as AttoparsecC8
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Function as Function
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
@@ -165,11 +169,11 @@ initialize api socketHandler = do
                        Just handler -> void (runMaybeT (handler args))
                        Nothing -> return ()
 
-                   other -> error' $ "Unexpected arguments: " ++ show other
+                   other -> error $ "Unexpected arguments: " ++ show other
 
-               Right e -> error' $ "Unexpected parse: " ++ show e
+               Right e -> error $ "Unexpected parse: " ++ show e
 
-               Left e -> error' $ "Attoparsec failed: " ++ show e
+               Left e -> error $ "Attoparsec failed: " ++ show e
 
   return (EIO.handler eio eioHandler api)
 
@@ -178,6 +182,12 @@ initialize api socketHandler = do
 data Socket = Socket { socketEIOSocket :: EIO.Socket
                      , socketEIO :: EIO.EngineIO
                      }
+
+instance Eq Socket where
+  (==) = (==) `Function.on` socketEIOSocket
+
+instance Ord Socket where
+  compare = comparing socketEIOSocket
 
 
 --------------------------------------------------------------------------------
@@ -243,22 +253,31 @@ on_ eventName handler =
 
 
 --------------------------------------------------------------------------------
-emitJSON :: (MonadReader Socket m, MonadIO m) => Text.Text -> Aeson.Array -> m ()
-emitJSON n args =
-  emitPacket (Packet Event Nothing "/" Nothing (Just (Aeson.Array (V.cons (Aeson.String n) args))))
-
-
---------------------------------------------------------------------------------
 emit :: (Aeson.ToJSON a, MonadReader Socket m, MonadIO m) => Text.Text -> a -> m ()
 emit n x = emitJSON n (V.singleton (Aeson.toJSON x))
 
 
 --------------------------------------------------------------------------------
-emitPacket :: (MonadReader Socket m, MonadIO m) => Packet -> m ()
-emitPacket packet = do
+emitTo :: (Aeson.ToJSON a, MonadIO m) => Socket -> Text.Text -> a -> m ()
+emitTo s n x = emitJSONTo s n (V.singleton (Aeson.toJSON x))
+
+
+--------------------------------------------------------------------------------
+emitJSON :: (MonadReader Socket m, MonadIO m) => Text.Text -> Aeson.Array -> m ()
+emitJSON n args = ask >>= \s -> emitJSONTo s n args
+
+
+--------------------------------------------------------------------------------
+emitJSONTo :: (MonadIO m) => Socket -> Text.Text -> Aeson.Array -> m ()
+emitJSONTo s n args =
+  emitPacketTo s (Packet Event Nothing "/" Nothing (Just (Aeson.Array (V.cons (Aeson.String n) args))))
+
+
+--------------------------------------------------------------------------------
+emitPacketTo :: (MonadIO m) => Socket -> Packet -> m ()
+emitPacketTo socket packet =
   let bytes = LBS.toStrict (Builder.toLazyByteString (encodePacket packet))
-  transport <- asks socketEIOSocket
-  liftIO (STM.atomically (EIO.enqueueMessage transport bytes))
+  in liftIO (STM.atomically (EIO.enqueueMessage (socketEIOSocket socket) bytes))
 
 
 --------------------------------------------------------------------------------
