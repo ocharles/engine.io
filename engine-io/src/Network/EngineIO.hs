@@ -37,6 +37,7 @@ module Network.EngineIO
 
 import Control.Applicative
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+import Control.Exception (SomeException(SomeException), try)
 import Control.Monad (forever, guard, replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
@@ -45,7 +46,7 @@ import Control.Monad.Trans.Either (eitherT, left)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
 import Data.Foldable (asum, for_)
-import Data.Function (on)
+import Data.Function (fix, on)
 import Data.Ix (inRange)
 import Data.List (foldl')
 import Data.Monoid ((<>), mconcat, mempty)
@@ -318,6 +319,9 @@ freshSession eio socketHandler api = do
                Packet Ping m ->
                  STM.writeTChan (transOut transport) (Packet Pong m)
 
+               Packet Close m ->
+                 STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete socketId)
+
                _ -> return ()
 
         , STM.readTChan (socketOutgoingMessages socket)
@@ -329,14 +333,10 @@ freshSession eio socketHandler api = do
 
     userSpace <- Async.async (socketHandler socket)
 
-    putStrLn $ "Allocated a new socket id: " ++ show socketId
-    open <- STM.atomically (STM.readTVar (eioOpenSessions eio))
-    putStrLn $ "Known sockets: " ++ show (HashMap.keys open)
-
     return socketId
 
   let openMessage = OpenMessage { omSocketId = socketId
-                                , omUpgrades = [ Websockets ]
+                                , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }
@@ -377,12 +377,20 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
       -- transport with a WebSocket transport.
       STM.atomically (STM.writeTVar (socketTransport socket) wsTransport)
 
-      Async.async $ forever $
-        receivePacket conn >>= STM.atomically . STM.writeTChan wsIn
-
-      forever $ do
+      reader <- Async.async $ forever $ do
         p <- STM.atomically (STM.readTChan wsOut)
         sendPacket conn p
+
+      fix $ \loop -> do
+        e <- try (receivePacket conn >>= STM.atomically . STM.writeTChan wsIn)
+        case e of
+          Left (SomeException e) ->
+            return ()
+
+          Right _ -> loop
+
+      STM.atomically (STM.writeTChan wsIn (Packet Close BS.empty))
+      Async.cancel reader
 
   receivePacket conn = do
     msg <- WebSockets.receiveDataMessage conn
