@@ -36,15 +36,21 @@ module Network.EngineIO
   ) where
 
 import Control.Applicative
-import Control.Monad.Loops (unfoldM)
+import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Monad (forever, guard, replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+import Control.Monad.Loops (unfoldM)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Either (eitherT, left)
+import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
-import Data.Foldable (asum)
+import Data.Foldable (asum, for_)
+import Data.Function (on)
 import Data.Ix (inRange)
 import Data.List (foldl')
 import Data.Monoid ((<>), mconcat, mempty)
+import Data.Ord (comparing)
+import Data.Traversable (for)
 
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM as STM
@@ -192,6 +198,12 @@ data Socket = Socket
   , socketOutgoingMessages :: STM.TChan BS.ByteString
   }
 
+instance Eq Socket where
+  (==) = (==) `on` socketId
+
+instance Ord Socket where
+  compare = comparing socketId
+
 
 --------------------------------------------------------------------------------
 dequeueMessage :: Socket -> STM.STM BS.ByteString
@@ -213,6 +225,7 @@ data ServerAPI m = ServerAPI
   , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m a
   , srvGetRequestMethod :: m BS.ByteString
   , srvRunWebSocket :: WebSockets.ServerApp -> m ()
+  , srvSetResponseCode :: Int -> m ()
   }
 
 
@@ -237,33 +250,42 @@ getOpenSockets = STM.readTVar . eioOpenSessions
 
 
 --------------------------------------------------------------------------------
+data EngineIOError = BadRequest | TransportUnknown | SessionIdUnknown
+  deriving (Bounded, Enum, Eq, Show)
+
+
+--------------------------------------------------------------------------------
 handler :: MonadIO m => EngineIO -> (Socket -> IO ()) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
+  eitherT (serveError api) return $ do
+    reqTransport <- maybe (left TransportUnknown) return $ do
+      [t] <- HashMap.lookup "transport" queryParams
+      parseTransportType (Text.decodeUtf8 t)
 
-  case HashMap.lookup "sid" queryParams of
-    Just [sid] -> do
-      case HashMap.lookup "transport" queryParams of
-        Just [tStr] ->
-          case parseTransportType (Text.decodeUtf8 tStr) of
-            Just reqTransport -> do
-              socket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
-              case socket of
-                Just s -> do
-                  transport <- liftIO $ STM.atomically $ STM.readTVar (socketTransport s)
-                  case transType transport of
-                    Polling
-                      | reqTransport == Polling -> handlePoll api transport
-                      | reqTransport == Websocket -> upgrade api s
+    socket <-
+      for (HashMap.lookup "sid" queryParams) $ \sids -> do
+        sid <- case sids of
+                 [sid] -> return sid
+                 _ -> left SessionIdUnknown
 
-        Nothing ->
-          error "EngineIO.handle: unknown socket"
+        mSocket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
+        case mSocket of
+          Nothing -> left SessionIdUnknown
+          Just s -> return s
 
-    Just _ ->
-      error "EngineIO.handle: unknown count of sid arguments"
+    case socket of
+      Just s -> do
+        transport <- liftIO $ STM.atomically $ STM.readTVar (socketTransport s)
+        case transType transport of
+          Polling
+            | reqTransport == Polling -> lift (handlePoll api transport)
+            | reqTransport == Websocket -> lift (upgrade api s)
 
-    Nothing ->
-      freshSession eio socketHandler api
+          _ -> left BadRequest
+
+      Nothing ->
+        lift (freshSession eio socketHandler api)
 
 
 --------------------------------------------------------------------------------
@@ -307,10 +329,14 @@ freshSession eio socketHandler api = do
 
     userSpace <- Async.async (socketHandler socket)
 
+    putStrLn $ "Allocated a new socket id: " ++ show socketId
+    open <- STM.atomically (STM.readTVar (eioOpenSessions eio))
+    putStrLn $ "Known sockets: " ++ show (HashMap.keys open)
+
     return socketId
 
   let openMessage = OpenMessage { omSocketId = socketId
-                                , omUpgrades = [ Websocket ]
+                                , omUpgrades = [  ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }
@@ -322,50 +348,52 @@ freshSession eio socketHandler api = do
 
 
 --------------------------------------------------------------------------------
+upgrade :: MonadIO m => ServerAPI m -> Socket -> m ()
 upgrade ServerAPI{..} socket = srvRunWebSocket go
 
   where
 
   go pending = do
     conn <- WebSockets.acceptRequest pending
-    do
-      p1 <- receivePacket conn
-      case p1 of
-        Packet Ping "probe" -> do
-          sendPacket conn (Packet Pong "probe")
 
-    wsIn <- STM.newTChanIO
-    wsOut <- STM.newTChanIO
+    mWsTransport <- runMaybeT $ do
+      Packet Ping "probe" <- lift (receivePacket conn)
+      lift (sendPacket conn (Packet Pong "probe"))
 
-    let wsTransport = Transport wsIn wsOut Websocket
+      wsIn <- liftIO STM.newTChanIO
+      wsOut <- liftIO STM.newTChanIO
 
-    STM.atomically $ do
-      currentTransport <- STM.readTVar (socketTransport socket)
-      STM.writeTChan (transOut currentTransport) (Packet Noop BS.empty)
+      liftIO $ STM.atomically $ do
+        currentTransport <- STM.readTVar (socketTransport socket)
+        STM.writeTChan (transOut currentTransport) (Packet Noop BS.empty)
 
-    do
-      p2 <- receivePacket conn
-      case p2 of
-        Packet Upgrade bytes
-          | bytes == BS.empty -> return ()
+      Packet Upgrade bytes <- lift (receivePacket conn)
+      guard (bytes == BS.empty)
 
-    -- The client has completed the upgrade, so we can swap out the current
-    -- transport with a WebSocket transport.
-    STM.atomically (STM.writeTVar (socketTransport socket) wsTransport)
+      return (Transport wsIn wsOut Websocket)
 
-    Async.async $ forever $
-      receivePacket conn >>= STM.atomically . STM.writeTChan wsIn
+    for_ mWsTransport $ \wsTransport@Transport { transIn = wsIn, transOut = wsOut } -> do
+      -- The client has completed the upgrade, so we can swap out the current
+      -- transport with a WebSocket transport.
+      STM.atomically (STM.writeTVar (socketTransport socket) wsTransport)
 
-    forever $ do
-      p <- STM.atomically (STM.readTChan wsOut)
-      sendPacket conn p
+      Async.async $ forever $
+        receivePacket conn >>= STM.atomically . STM.writeTChan wsIn
+
+      forever $ do
+        p <- STM.atomically (STM.readTChan wsOut)
+        sendPacket conn p
 
   receivePacket conn = do
     msg <- WebSockets.receiveDataMessage conn
     case msg of
-     WebSockets.Text bytes ->
+      WebSockets.Text bytes ->
        let Right p = Attoparsec.parseOnly parsePacket (LBS.toStrict bytes)
        in return p
+
+      other -> do
+        putStrLn $ "Unknown WebSocket message: " ++ show other
+        receivePacket conn
 
   sendPacket conn p = do
     WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket p))
@@ -378,7 +406,7 @@ handlePoll api@ServerAPI{..} transport = do
   case requestMethod of
     m | m == "GET" -> poll
     m | m == "POST" -> post
-    _ -> error "EngineIO.handleSocket: unknown method"
+    _ -> serveError api BadRequest
 
   where
 
@@ -407,7 +435,7 @@ writeBytes ServerAPI {..} builder = do
 newSocketId :: EngineIO -> IO SocketId
 newSocketId eio =
   Base64.encode . BS.pack
-    <$> withMVar (eioRng eio) (replicateM 40 . Random.uniformR (0, 63))
+    <$> withMVar (eioRng eio) (replicateM 15 . Random.uniformR (0, 63))
 {-# INLINE newSocketId #-}
 
 
@@ -426,3 +454,25 @@ instance Aeson.ToJSON OpenMessage where
     , "pingTimeout" .= omPingTimeout
     , "pingInterval" .= omPingInterval
     ]
+
+
+--------------------------------------------------------------------------------
+serveError :: Monad m => ServerAPI m -> EngineIOError -> m ()
+serveError ServerAPI{..} e = do
+  srvSetResponseCode 400
+  srvSetContentType "application/json"
+  srvWriteBuilder $ Builder.lazyByteString $ Aeson.encode $ Aeson.object
+    [ "code" .= errorCode, "message" .= errorMessage ]
+
+  where
+  errorCode :: Int
+  errorCode = case e of
+                TransportUnknown -> 0
+                SessionIdUnknown -> 1
+                BadRequest -> 3
+
+  errorMessage :: Text.Text
+  errorMessage = case e of
+                   TransportUnknown -> "Transport unknown"
+                   SessionIdUnknown -> "Session ID unknown"
+                   BadRequest -> "Bad request"
