@@ -336,7 +336,7 @@ freshSession eio socketHandler api = do
     return socketId
 
   let openMessage = OpenMessage { omSocketId = socketId
-                                , omUpgrades = [  ]
+                                , omUpgrades = [ Websockets ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }
