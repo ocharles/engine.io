@@ -467,8 +467,11 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
         putStrLn $ "Unknown WebSocket message: " ++ show other
         receivePacket conn
 
-  sendPacket conn p = do
-    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket True p))
+  sendPacket conn p@(Packet _ (TextPacket _)) = do
+    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket False p))
+
+  sendPacket conn p@(Packet _ (BinaryPacket _)) = do
+    WebSockets.sendBinaryData conn (Builder.toLazyByteString (encodePacket True p))
 
 
 --------------------------------------------------------------------------------
