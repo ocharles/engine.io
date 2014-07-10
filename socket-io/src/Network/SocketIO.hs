@@ -152,7 +152,6 @@ initialize api socketHandler = do
     eioHandler socket = do
       let wrappedSocket = Socket socket eio
       routingTable <- execStateT socketHandler (RoutingTable mempty (const (return ())))
-      liftIO $ print (HashMap.keys $ rtEvents routingTable)
 
       return $ EIO.SocketApp
         { EIO.saApp = flip runReaderT wrappedSocket $ do
