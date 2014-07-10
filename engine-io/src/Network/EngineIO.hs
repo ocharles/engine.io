@@ -18,6 +18,7 @@ module Network.EngineIO
   , send
   , receive
   , Socket
+  , SocketId
   , socketId
   , getOpenSockets
 

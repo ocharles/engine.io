@@ -20,6 +20,8 @@ module Network.SocketIO
   , on_
   , onJSON
 
+  , appendDisconnectHandler
+
   , emit
   , emitJSON
   , emitTo
@@ -30,6 +32,7 @@ module Network.SocketIO
 
     -- * Sockets
   , Socket
+  , socketId
 
     -- * RoutingTable
   , RoutingTable
@@ -159,7 +162,8 @@ initialize api socketHandler = do
         flip runReaderT wrappedSocket $ do
           emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
 
-          RoutingTable initialRoutingTable <- execStateT mkInitialRoutingTable (RoutingTable mempty)
+          RoutingTable initialRoutingTable onDisconnect <-
+            execStateT mkInitialRoutingTable (RoutingTable mempty (const (return ())))
 
           forever $ do
             EIO.TextPacket t <- liftIO (STM.atomically (EIO.receive socket))
@@ -191,10 +195,14 @@ instance Eq Socket where
 instance Ord Socket where
   compare = comparing socketEIOSocket
 
+socketId :: Socket -> EIO.SocketId
+socketId = EIO.socketId . socketEIOSocket
+
 
 --------------------------------------------------------------------------------
 data RoutingTable = RoutingTable
   { rtEvents :: HashMap.HashMap Text.Text (Aeson.Array -> MaybeT (ReaderT Socket IO) ())
+  , rtDisconnect :: EIO.SocketId -> IO ()
   }
 
 
@@ -253,6 +261,14 @@ on_ eventName handler =
                               (rtEvents rt)
        }
 
+
+--------------------------------------------------------------------------------
+appendDisconnectHandler
+  :: MonadState RoutingTable m => (EIO.SocketId -> IO ()) -> m ()
+appendDisconnectHandler handler = modify $ \rt -> rt
+  { rtDisconnect = \sId -> do rtDisconnect rt sId
+                              handler sId
+  }
 
 --------------------------------------------------------------------------------
 emit :: (Aeson.ToJSON a, MonadReader Socket m, MonadIO m) => Text.Text -> a -> m ()
