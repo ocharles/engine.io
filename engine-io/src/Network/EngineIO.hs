@@ -40,6 +40,8 @@ module Network.EngineIO
   , parseTransportType
   ) where
 
+import Prelude hiding (any)
+
 import Control.Applicative
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (SomeException(SomeException), try)
@@ -51,7 +53,7 @@ import Control.Monad.Trans.Either (eitherT, left)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
 import Data.Char (digitToInt, intToDigit)
-import Data.Foldable (asum, for_)
+import Data.Foldable (any, asum, for_)
 import Data.Function (fix, on)
 import Data.Ix (inRange)
 import Data.List (foldl')
@@ -193,11 +195,17 @@ encodePayload :: Bool -> Payload -> Builder.Builder
 encodePayload supportsBinary (Payload packets) =
   let contents = V.foldl' (\bytes p -> bytes <> encodePacket supportsBinary p) mempty packets
       l = LBS.length (Builder.toLazyByteString contents)
-  in mconcat [ Builder.word8 0
+  in mconcat [ Builder.word8 $ if any isBinaryPacket packets
+                                  then 1
+                                  else 0
              , mconcat $ map (Builder.word8 . read . pure) $ show l
              , Builder.word8 maxBound
              , contents
              ]
+
+  where
+  isBinaryPacket (Packet _ (BinaryPacket _)) = True
+  isBinaryPacket _ = False
 
 
 --------------------------------------------------------------------------------
