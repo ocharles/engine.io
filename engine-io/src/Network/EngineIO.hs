@@ -13,6 +13,7 @@ module Network.EngineIO
   , handler
   , EngineIO
   , ServerAPI (..)
+  , SocketApp(..)
 
     -- * Interacting with 'Socket's
   , send
@@ -122,6 +123,7 @@ data PacketContent
   = BinaryPacket !BS.ByteString
   | TextPacket !Text.Text
   deriving (Eq, Show)
+
 
 --------------------------------------------------------------------------------
 parsePacket :: Attoparsec.Parser Packet
@@ -308,7 +310,14 @@ data EngineIOError = BadRequest | TransportUnknown | SessionIdUnknown
 
 
 --------------------------------------------------------------------------------
-handler :: MonadIO m => EngineIO -> m (Socket -> IO ()) -> ServerAPI m -> m ()
+data SocketApp = SocketApp
+  { saApp :: IO ()
+  , saOnDisconnect :: IO ()
+  }
+
+
+--------------------------------------------------------------------------------
+handler :: MonadIO m => EngineIO -> (Socket -> m SocketApp) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
   eitherT (serveError api) return $ do
@@ -352,23 +361,29 @@ handler eio socketHandler api@ServerAPI{..} = do
 freshSession
   :: MonadIO m
   => EngineIO
-  -> m (Socket -> IO ())
+  -> (Socket -> m SocketApp)
   -> ServerAPI m
   -> Bool
   -> m ()
 freshSession eio socketHandler api supportsBinary = do
-  socket <- liftIO $ do
-    socketId <- newSocketId eio
+  sId <- liftIO (newSocketId eio)
 
-    socket <- Socket <$> pure socketId
-                     <*> (do transport <- Transport <$> STM.newTChanIO
-                                                    <*> STM.newTChanIO
-                                                    <*> pure Polling
-                             STM.newTVarIO transport)
-                     <*> STM.newTChanIO
-                     <*> STM.newTChanIO
+  socket <- liftIO $
+    Socket <$> pure sId
+           <*> (do transport <- Transport <$> STM.newTChanIO
+                                          <*> STM.newTChanIO
+                                          <*> pure Polling
+                   STM.newTVarIO transport)
+           <*> STM.newTChanIO
+           <*> STM.newTChanIO
 
-    brain <- Async.async $ forever $ STM.atomically $ do
+  liftIO $ STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert sId socket))
+
+  app <- socketHandler socket
+  userSpace <- liftIO $ Async.async (saApp app)
+
+  brain <- liftIO $ Async.async $ fix $ \loop -> do
+    mMessage <- STM.atomically $ do
       transport <- STM.readTVar (socketTransport socket)
       asum
         [ do req <- STM.readTChan (transIn transport)
@@ -379,23 +394,27 @@ freshSession eio socketHandler api supportsBinary = do
                Packet Ping m ->
                  STM.writeTChan (transOut transport) (Packet Pong m)
 
-               Packet Close _ ->
-                 STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete socketId)
+               _ ->
+                 return ()
 
-               _ -> return ()
+             return (Just req)
 
-        , STM.readTChan (socketOutgoingMessages socket)
-            >>= STM.writeTChan (transOut transport) . Packet Message
+        , do STM.readTChan (socketOutgoingMessages socket)
+               >>= STM.writeTChan (transOut transport) . Packet Message
+
+             return Nothing
         ]
 
-    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert socketId socket))
+    case mMessage of
+      Just (Packet Close _) -> return ()
+      _ -> loop
 
-    return socket
+  _ <- liftIO $ Async.async $ do
+    _ <- Async.waitAnyCatchCancel [ userSpace, brain ]
+    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete sId))
+    saOnDisconnect app
 
-  h <- socketHandler
-  userSpace <- liftIO $ Async.async (h socket)
-
-  let openMessage = OpenMessage { omSocketId = socketId socket
+  let openMessage = OpenMessage { omSocketId = sId
                                 , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
@@ -449,8 +468,8 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
 
           Right _ -> loop
 
-      STM.atomically (STM.writeTChan wsIn (Packet Close (TextPacket Text.empty)))
       Async.cancel reader
+      STM.atomically (STM.writeTChan wsIn (Packet Close (TextPacket Text.empty)))
 
   receivePacket conn = do
     msg <- WebSockets.receiveDataMessage conn

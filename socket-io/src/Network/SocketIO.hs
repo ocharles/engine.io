@@ -13,7 +13,6 @@ module Network.SocketIO
 
     -- * Running Socket.IO Applications
   , initialize
-  , Router
   , EventHandler
 
   , on
@@ -137,10 +136,6 @@ encodePacket (Packet pt attachments n pId json) =
 
 
 --------------------------------------------------------------------------------
-type Router a = StateT RoutingTable (ReaderT Socket IO) a
-
-
---------------------------------------------------------------------------------
 type EventHandler a = ReaderT Socket IO a
 
 
@@ -148,38 +143,39 @@ type EventHandler a = ReaderT Socket IO a
 initialize
   :: MonadIO m
   => EIO.ServerAPI m
-  -> m (Router a)
+  -> StateT RoutingTable m a
   -> IO (m ())
 initialize api socketHandler = do
   eio <- EIO.initialize
 
   let
-    eioHandler = do
-      mkInitialRoutingTable <- socketHandler
+    eioHandler socket = do
+      let wrappedSocket = Socket socket eio
+      routingTable <- execStateT socketHandler (RoutingTable mempty (const (return ())))
+      liftIO $ print (HashMap.keys $ rtEvents routingTable)
 
-      return $ \socket -> do
-        let wrappedSocket = Socket socket eio
-        flip runReaderT wrappedSocket $ do
-          emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
+      return $ EIO.SocketApp
+        { EIO.saApp = flip runReaderT wrappedSocket $ do
+            emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
 
-          RoutingTable initialRoutingTable onDisconnect <-
-            execStateT mkInitialRoutingTable (RoutingTable mempty (const (return ())))
+            forever $ do
+              EIO.TextPacket t <- liftIO (STM.atomically (EIO.receive socket))
+              case Attoparsec.parseOnly parsePacket (Text.encodeUtf8 t) of
+                Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
+                  case (V.unsafeHead v, V.unsafeTail v) of
+                    (Aeson.String name, args) -> do
+                      case name `HashMap.lookup` rtEvents routingTable of
+                        Just handler -> void (runMaybeT (handler args))
+                        Nothing -> return ()
 
-          forever $ do
-            EIO.TextPacket t <- liftIO (STM.atomically (EIO.receive socket))
-            case Attoparsec.parseOnly parsePacket (Text.encodeUtf8 t) of
-              Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
-                case (V.unsafeHead v, V.unsafeTail v) of
-                  (Aeson.String name, args) ->
-                    case name `HashMap.lookup` initialRoutingTable of
-                      Just handler -> void (runMaybeT (handler args))
-                      Nothing -> return ()
+                    other -> error $ "Unexpected arguments: " ++ show other
 
-                  other -> error $ "Unexpected arguments: " ++ show other
+                Right e -> error $ "Unexpected parse: " ++ show e
 
-              Right e -> error $ "Unexpected parse: " ++ show e
+                Left e -> error $ "Attoparsec failed: " ++ show e
 
-              Left e -> error $ "Attoparsec failed: " ++ show e
+        , EIO.saOnDisconnect = rtDisconnect routingTable (socketId wrappedSocket)
+        }
 
   return (EIO.handler eio eioHandler api)
 
