@@ -96,5 +96,5 @@ server state = do
 main :: IO ()
 main = do
   state <- ServerState <$> STM.newTVarIO 0
-  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (server state)
+  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (return $ server state)
   Snap.quickHttpServe $ CORS.applyCORS CORS.defaultOptions socketIoHandler

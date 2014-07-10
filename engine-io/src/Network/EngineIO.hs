@@ -2,49 +2,55 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
--- | Parsers and encoders for the Engine.IO protocol.
 module Network.EngineIO
-  ( -- * Packets
-    Packet(..)
+  ( -- $intro
+
+    -- * Example Usage
+    -- $example
+
+    -- * Running Engine.IO applications
+    initialize
+  , handler
+  , EngineIO
+  , ServerAPI (..)
+
+    -- * Interacting with 'Socket's
+  , send
+  , receive
+  , Socket
+  , socketId
+  , getOpenSockets
+
+    -- * The Engine.IO Protocol
+    -- ** Packets
+  , Packet(..)
   , parsePacket
   , encodePacket
 
-    -- * Payloads
+    -- ** Packet Contents
+  , PacketContent(..)
+
+    -- ** Payloads
   , Payload(..)
   , parsePayload
   , encodePayload
 
-    -- * Transport types
+    -- ** Transport types
   , TransportType(..)
   , parseTransportType
-
-    -- Engine.IO protocol
-  , EngineIO
-  , initialize
-  , handler
-
-  , getOpenSockets
-
-    -- * ServerAPI
-  , ServerAPI(..)
-
-    -- Sockets
-  , Socket
-  , socketId
-  , dequeueMessage
-  , enqueueMessage
   ) where
 
 import Control.Applicative
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (SomeException(SomeException), try)
-import Control.Monad (forever, guard, replicateM)
+import Control.Monad (MonadPlus, forever, guard, mzero, replicateM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Either (eitherT, left)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
+import Data.Char (digitToInt, intToDigit)
 import Data.Foldable (asum, for_)
 import Data.Function (fix, on)
 import Data.Ix (inRange)
@@ -70,41 +76,49 @@ import qualified Network.WebSockets as WebSockets
 import qualified System.Random.MWC as Random
 
 --------------------------------------------------------------------------------
+-- | The possible packet types, as mentioned in the
+-- <https://github.com/Automattic/engine.io-protocol Engine.IO protocol documentation>
 data PacketType = Open | Close | Ping | Pong | Message | Upgrade | Noop
   deriving (Bounded, Enum, Eq, Read, Show)
 
 
 --------------------------------------------------------------------------------
-parsePacketType :: Attoparsec.Parser PacketType
-parsePacketType = asum $
-  [ Open <$ AttoparsecC8.char '0'
-  , Close <$ AttoparsecC8.char '1'
-  , Ping <$ AttoparsecC8.char '2'
-  , Pong <$ AttoparsecC8.char '3'
-  , Message <$ AttoparsecC8.char '4'
-  , Upgrade <$ AttoparsecC8.char '5'
-  , Noop <$ AttoparsecC8.char '6'
-  ]
-{-# INLINE parsePacketType #-}
+packetTypeToIndex :: Num i => PacketType -> i
+packetTypeToIndex t =
+  case t of
+    Open -> 0
+    Close -> 1
+    Ping -> 2
+    Pong -> 3
+    Message -> 4
+    Upgrade -> 5
+    Noop -> 6
+{-# INLINE packetTypeToIndex #-}
 
 
 --------------------------------------------------------------------------------
-encodePacketType :: PacketType -> Builder.Builder
-encodePacketType t = case t of
-  Open -> Builder.char8 '0'
-  Close -> Builder.char8 '1'
-  Ping -> Builder.char8 '2'
-  Pong -> Builder.char8 '3'
-  Message -> Builder.char8 '4'
-  Upgrade -> Builder.char8 '5'
-  Noop -> Builder.char8 '6'
-{-# INLINE encodePacketType #-}
+packetTypeFromIndex :: (Eq i, MonadPlus m, Num i) => i -> m PacketType
+packetTypeFromIndex i =
+  case i of
+    0 -> return Open
+    1 -> return Close
+    2 -> return Ping
+    3 -> return Pong
+    4 -> return Message
+    5 -> return Upgrade
+    6 -> return Noop
+    _ -> mzero
+{-# INLINE packetTypeFromIndex #-}
 
 
 --------------------------------------------------------------------------------
-data Packet = Packet !PacketType !BS.ByteString
+data Packet = Packet !PacketType !PacketContent
   deriving (Eq, Show)
 
+data PacketContent
+  = BinaryPacket !BS.ByteString
+  | TextPacket !Text.Text
+  deriving (Eq, Show)
 
 --------------------------------------------------------------------------------
 parsePacket :: Attoparsec.Parser Packet
@@ -113,9 +127,43 @@ parsePacket = parsePacket' Attoparsec.takeByteString
 
 
 --------------------------------------------------------------------------------
-encodePacket :: Packet -> Builder.Builder
-encodePacket (Packet t bytes) = encodePacketType t <> Builder.byteString bytes
-{-# INLINE encodePacket #-}
+parsePacket' :: Attoparsec.Parser BS.ByteString -> Attoparsec.Parser Packet
+parsePacket' body = parseBase64 <|> parseBinary <|> parseText
+
+  where
+  parseBase64 = do
+    _ <- AttoparsecC8.char 'b'
+    Packet <$> c8PacketType
+           <*> (either fail (return . BinaryPacket) . Base64.decode =<< body)
+
+  parseBinary = do
+    Packet <$> (packetTypeFromIndex =<< Attoparsec.satisfy (inRange (0, 6)))
+           <*> (BinaryPacket <$> body)
+
+  parseText = do
+    Packet <$> c8PacketType
+           <*> (TextPacket . Text.decodeUtf8 <$> body)
+
+  c8PacketType =
+    packetTypeFromIndex . digitToInt  =<< AttoparsecC8.satisfy (inRange ('0', '6'))
+
+{-# INLINE parsePacket' #-}
+
+
+--------------------------------------------------------------------------------
+encodePacket :: Bool -> Packet -> Builder.Builder
+encodePacket True (Packet t (BinaryPacket bytes)) =
+  Builder.word8 (packetTypeToIndex t) <>
+    Builder.byteString bytes
+
+encodePacket False (Packet t (BinaryPacket bytes)) =
+  Builder.char8 'b' <>
+    Builder.char8 (intToDigit (packetTypeToIndex t)) <>
+      Builder.byteString (Base64.encode bytes)
+
+encodePacket _ (Packet t (TextPacket bytes)) =
+  Builder.char8 (intToDigit (packetTypeToIndex t)) <>
+    Builder.byteString (Text.encodeUtf8 bytes)
 
 
 --------------------------------------------------------------------------------
@@ -128,7 +176,7 @@ parsePayload :: Attoparsec.Parser Payload
 parsePayload = Payload <$> go
   where
   go = do
-    isString <- (True <$ Attoparsec.word8 0) <|> (False <$ Attoparsec.word8 1)
+    _ <- Attoparsec.satisfy (`elem` [0, 1])
     len <- parseLength =<< Attoparsec.many1 (Attoparsec.satisfy (inRange (0, 9)))
     _ <- Attoparsec.word8 maxBound
 
@@ -141,21 +189,15 @@ parsePayload = Payload <$> go
 
 
 --------------------------------------------------------------------------------
-encodePayload :: Payload -> Builder.Builder
-encodePayload (Payload packets) =
-  let contents = V.foldl' (\bytes p -> bytes <> encodePacket p) mempty packets
+encodePayload :: Bool -> Payload -> Builder.Builder
+encodePayload supportsBinary (Payload packets) =
+  let contents = V.foldl' (\bytes p -> bytes <> encodePacket supportsBinary p) mempty packets
       l = LBS.length (Builder.toLazyByteString contents)
   in mconcat [ Builder.word8 0
              , mconcat $ map (Builder.word8 . read . pure) $ show l
              , Builder.word8 maxBound
              , contents
              ]
-
-
---------------------------------------------------------------------------------
-parsePacket' :: Attoparsec.Parser BS.ByteString -> Attoparsec.Parser Packet
-parsePacket' body = Packet <$> parsePacketType <*> body
-{-# INLINE parsePacket' #-}
 
 
 --------------------------------------------------------------------------------
@@ -195,8 +237,8 @@ data Transport = Transport
 data Socket = Socket
   { socketId :: !SocketId
   , socketTransport :: STM.TVar Transport
-  , socketIncomingMessages :: STM.TChan BS.ByteString
-  , socketOutgoingMessages :: STM.TChan BS.ByteString
+  , socketIncomingMessages :: STM.TChan PacketContent
+  , socketOutgoingMessages :: STM.TChan PacketContent
   }
 
 instance Eq Socket where
@@ -207,15 +249,15 @@ instance Ord Socket where
 
 
 --------------------------------------------------------------------------------
-dequeueMessage :: Socket -> STM.STM BS.ByteString
-dequeueMessage Socket{..} = STM.readTChan socketIncomingMessages
-{-# INLINE dequeueMessage #-}
+receive :: Socket -> STM.STM PacketContent
+receive Socket{..} = STM.readTChan socketIncomingMessages
+{-# INLINE receive #-}
 
 
 --------------------------------------------------------------------------------
-enqueueMessage :: Socket -> BS.ByteString -> STM.STM ()
-enqueueMessage Socket{..} = STM.writeTChan socketOutgoingMessages
-{-# INLINE enqueueMessage #-}
+send :: Socket -> PacketContent -> STM.STM ()
+send Socket{..} = STM.writeTChan socketOutgoingMessages
+{-# INLINE send #-}
 
 
 --------------------------------------------------------------------------------
@@ -256,7 +298,7 @@ data EngineIOError = BadRequest | TransportUnknown | SessionIdUnknown
 
 
 --------------------------------------------------------------------------------
-handler :: MonadIO m => EngineIO -> (Socket -> IO ()) -> ServerAPI m -> m ()
+handler :: MonadIO m => EngineIO -> m (Socket -> IO ()) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
   eitherT (serveError api) return $ do
@@ -275,29 +317,37 @@ handler eio socketHandler api@ServerAPI{..} = do
           Nothing -> left SessionIdUnknown
           Just s -> return s
 
+    supportsBinary <-
+      case HashMap.lookup "b64" queryParams of
+        Just ["1"] -> return False
+        Just ["0"] -> return True
+        Nothing    -> return True
+        _          -> left BadRequest
+
     case socket of
       Just s -> do
         transport <- liftIO $ STM.atomically $ STM.readTVar (socketTransport s)
         case transType transport of
           Polling
-            | reqTransport == Polling -> lift (handlePoll api transport)
+            | reqTransport == Polling -> lift (handlePoll api transport supportsBinary)
             | reqTransport == Websocket -> lift (upgrade api s)
 
           _ -> left BadRequest
 
       Nothing ->
-        lift (freshSession eio socketHandler api)
+        lift (freshSession eio socketHandler api supportsBinary)
 
 
 --------------------------------------------------------------------------------
 freshSession
   :: MonadIO m
   => EngineIO
-  -> (Socket -> IO ())
+  -> m (Socket -> IO ())
   -> ServerAPI m
+  -> Bool
   -> m ()
-freshSession eio socketHandler api = do
-  socketId <- liftIO $ do
+freshSession eio socketHandler api supportsBinary = do
+  socket <- liftIO $ do
     socketId <- newSocketId eio
 
     socket <- Socket <$> pure socketId
@@ -319,7 +369,7 @@ freshSession eio socketHandler api = do
                Packet Ping m ->
                  STM.writeTChan (transOut transport) (Packet Pong m)
 
-               Packet Close m ->
+               Packet Close _ ->
                  STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete socketId)
 
                _ -> return ()
@@ -328,23 +378,23 @@ freshSession eio socketHandler api = do
             >>= STM.writeTChan (transOut transport) . Packet Message
         ]
 
-
     STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert socketId socket))
 
-    userSpace <- Async.async (socketHandler socket)
+    return socket
 
-    return socketId
+  h <- socketHandler
+  userSpace <- liftIO $ Async.async (h socket)
 
-  let openMessage = OpenMessage { omSocketId = socketId
+  let openMessage = OpenMessage { omSocketId = socketId socket
                                 , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }
 
       payload = Payload $ V.singleton $
-                  Packet Open (LBS.toStrict $ Aeson.encode openMessage)
+                  Packet Open (TextPacket $ Text.decodeUtf8 $ LBS.toStrict $ Aeson.encode openMessage)
 
-  writeBytes api (encodePayload payload)
+  writeBytes api (encodePayload supportsBinary payload)
 
 
 --------------------------------------------------------------------------------
@@ -357,19 +407,19 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
     conn <- WebSockets.acceptRequest pending
 
     mWsTransport <- runMaybeT $ do
-      Packet Ping "probe" <- lift (receivePacket conn)
-      lift (sendPacket conn (Packet Pong "probe"))
+      Packet Ping (TextPacket "probe") <- lift (receivePacket conn)
+      lift (sendPacket conn (Packet Pong (TextPacket "probe")))
 
       (wsIn, wsOut) <- liftIO $ STM.atomically $ do
         currentTransport <- STM.readTVar (socketTransport socket)
-        STM.writeTChan (transOut currentTransport) (Packet Noop BS.empty)
+        STM.writeTChan (transOut currentTransport) (Packet Noop (TextPacket Text.empty))
 
         wsIn <- STM.dupTChan (transIn currentTransport)
         wsOut <- STM.newTChan
         return (wsIn, wsOut)
 
-      Packet Upgrade bytes <- lift (receivePacket conn)
-      guard (bytes == BS.empty)
+      Packet Upgrade body <- lift (receivePacket conn)
+      guard (body == TextPacket Text.empty || body == BinaryPacket BS.empty)
 
       return (Transport wsIn wsOut Websocket)
 
@@ -385,32 +435,36 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
       fix $ \loop -> do
         e <- try (receivePacket conn >>= STM.atomically . STM.writeTChan wsIn)
         case e of
-          Left (SomeException e) ->
+          Left (SomeException _) ->
             return ()
 
           Right _ -> loop
 
-      STM.atomically (STM.writeTChan wsIn (Packet Close BS.empty))
+      STM.atomically (STM.writeTChan wsIn (Packet Close (TextPacket Text.empty)))
       Async.cancel reader
 
   receivePacket conn = do
     msg <- WebSockets.receiveDataMessage conn
     case msg of
       WebSockets.Text bytes ->
-       let Right p = Attoparsec.parseOnly parsePacket (LBS.toStrict bytes)
-       in return p
+        case Attoparsec.parseOnly parsePacket (LBS.toStrict bytes)  of
+          Left ex -> do
+            putStrLn $ "Malformed packet received: " ++ show bytes ++ " (" ++ show ex ++ ")"
+            receivePacket conn
+
+          Right p -> return p
 
       other -> do
         putStrLn $ "Unknown WebSocket message: " ++ show other
         receivePacket conn
 
   sendPacket conn p = do
-    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket p))
+    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket True p))
 
 
 --------------------------------------------------------------------------------
-handlePoll :: MonadIO m => ServerAPI m -> Transport -> m ()
-handlePoll api@ServerAPI{..} transport = do
+handlePoll :: MonadIO m => ServerAPI m -> Transport -> Bool -> m ()
+handlePoll api@ServerAPI{..} transport supportsBinary = do
   requestMethod <- srvGetRequestMethod
   case requestMethod of
     m | m == "GET" -> poll
@@ -425,7 +479,7 @@ handlePoll api@ServerAPI{..} transport = do
       (:) <$> STM.atomically (STM.readTChan out)
           <*> unfoldM (STM.atomically (STM.tryReadTChan (transOut transport)))
 
-    writeBytes api (encodePayload (Payload (V.fromList packets)))
+    writeBytes api (encodePayload supportsBinary (Payload (V.fromList packets)))
 
   post = do
     Payload packets <- srvParseRequestBody parsePayload
@@ -485,3 +539,59 @@ serveError ServerAPI{..} e = do
                    TransportUnknown -> "Transport unknown"
                    SessionIdUnknown -> "Session ID unknown"
                    BadRequest -> "Bad request"
+
+
+{- $intro
+
+'Network.EngineIO' is a Haskell of implementation of
+<https://github.com/automattic/engine.io Engine.IO>, a realtime framework for
+the web. Engine.IO provides you with an abstraction for doing real-time
+communication between a server and a client. Engine.IO abstracts the framing and
+transport away, so that you can have real-time communication over long-polling
+HTTP requests, which are later upgraded to web sockets, if available.
+
+'Network.EngineIO' needs to be provided with a 'ServerAPI' in order to be
+ran. 'ServerAPI' informs us how to fetch request headers, write HTTP responses
+to the client, and run web socket applications. Hackage contains implementations
+of 'ServerAPI' as:
+
+* <http://hackage.haskell.org/package/engine-io-snap engine-io-snap> for Snap.
+
+If you write your own implementation of 'ServerAPI', please share it on Hackage
+and I will link to it from here.
+
+-}
+
+{- $example
+
+A simple echo server is easy to write with Engine.IO. The following imports will
+be required:
+
+> import Control.Concurrent.STM
+> import Control.Monad (forever)
+> import Network.EngineIO
+> import Network.EngineIO.Snap
+> import Snap.Http.Server
+
+Next, we write the implementation of our per-socket processing logic. For this
+application we simply receive from the socket, and then send the result back to
+the socket. We wrap this all in 'Control.Monad.forever' as this connection
+should never terminate.
+
+> handleSocket :: Socket -> IO ()
+> handleSocket s = forever $ atomically $
+>   receive s >>= send s
+
+Finally, we add a @main@ function to our application to launch it. I'll use
+@engine-io-snap@ as my server implementation:
+
+> main :: IO ()
+> main = do
+>   eio <- initialize
+>   quickHttpServe $ handler eio handleSocket
+
+This means that /any/ URL works as the Engine.IO server, which is sufficient for
+our example. In a real production application, you will probably want to nest
+the 'handler' under @/engine.io@.
+
+-}

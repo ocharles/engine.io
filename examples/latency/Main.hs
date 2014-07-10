@@ -16,4 +16,4 @@ main :: IO ()
 main = do
   eio <- EIO.initialize
   Snap.quickHttpServe $ CORS.applyCORS CORS.defaultOptions $
-    EIO.handler eio (\s -> forever $ STM.atomically $ EIO.dequeueMessage s >>= EIO.enqueueMessage s) EIOSnap.snapAPI
+    EIO.handler eio (return $ \s -> forever $ STM.atomically $ EIO.receive s >>= EIO.send s) EIOSnap.snapAPI

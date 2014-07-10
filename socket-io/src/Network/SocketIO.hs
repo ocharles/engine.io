@@ -145,35 +145,37 @@ type EventHandler a = ReaderT Socket IO a
 initialize
   :: MonadIO m
   => EIO.ServerAPI m
-  -> Router a
+  -> m (Router a)
   -> IO (m ())
 initialize api socketHandler = do
   eio <- EIO.initialize
 
   let
-    mkInitialRoutingTable = execStateT socketHandler (RoutingTable mempty)
+    eioHandler = do
+      mkInitialRoutingTable <- socketHandler
 
-    eioHandler socket =
-      let wrappedSocket = Socket socket eio
-      in flip runReaderT wrappedSocket $ do
-           emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
-           RoutingTable initialRoutingTable <- mkInitialRoutingTable
+      return $ \socket -> do
+        let wrappedSocket = Socket socket eio
+        flip runReaderT wrappedSocket $ do
+          emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
 
-           forever $ do
-             bytes <- liftIO (STM.atomically (EIO.dequeueMessage socket))
-             case Attoparsec.parseOnly parsePacket bytes of
-               Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
-                 case (V.unsafeHead v, V.unsafeTail v) of
-                   (Aeson.String name, args) ->
-                     case name `HashMap.lookup` initialRoutingTable of
-                       Just handler -> void (runMaybeT (handler args))
-                       Nothing -> return ()
+          RoutingTable initialRoutingTable <- execStateT mkInitialRoutingTable (RoutingTable mempty)
 
-                   other -> error $ "Unexpected arguments: " ++ show other
+          forever $ do
+            EIO.TextPacket t <- liftIO (STM.atomically (EIO.receive socket))
+            case Attoparsec.parseOnly parsePacket (Text.encodeUtf8 t) of
+              Right (Packet Event _ _ _ (Just (Aeson.Array v))) | not (V.null v) -> do
+                case (V.unsafeHead v, V.unsafeTail v) of
+                  (Aeson.String name, args) ->
+                    case name `HashMap.lookup` initialRoutingTable of
+                      Just handler -> void (runMaybeT (handler args))
+                      Nothing -> return ()
 
-               Right e -> error $ "Unexpected parse: " ++ show e
+                  other -> error $ "Unexpected arguments: " ++ show other
 
-               Left e -> error $ "Attoparsec failed: " ++ show e
+              Right e -> error $ "Unexpected parse: " ++ show e
+
+              Left e -> error $ "Attoparsec failed: " ++ show e
 
   return (EIO.handler eio eioHandler api)
 
@@ -277,7 +279,7 @@ emitJSONTo s n args =
 emitPacketTo :: (MonadIO m) => Socket -> Packet -> m ()
 emitPacketTo socket packet =
   let bytes = LBS.toStrict (Builder.toLazyByteString (encodePacket packet))
-  in liftIO (STM.atomically (EIO.enqueueMessage (socketEIOSocket socket) bytes))
+  in liftIO (STM.atomically (EIO.send (socketEIOSocket socket) (EIO.TextPacket (Text.decodeUtf8 bytes))))
 
 
 --------------------------------------------------------------------------------
@@ -295,8 +297,10 @@ broadcast n x = broadcastJSON n (V.singleton (Aeson.toJSON x))
 broadcastPacket :: (MonadReader Socket m, MonadIO m) => Packet -> m ()
 broadcastPacket packet = do
   let bytes = LBS.toStrict (Builder.toLazyByteString (encodePacket packet))
+      eioPacket = EIO.TextPacket (Text.decodeUtf8 bytes)
+
   eio <- asks socketEIO
   t <- asks socketEIOSocket
   liftIO $ STM.atomically $ do
     sockets <- HashMap.delete (EIO.socketId t) <$> EIO.getOpenSockets eio
-    forM_ sockets (flip EIO.enqueueMessage bytes)
+    forM_ sockets (flip EIO.send eioPacket)
