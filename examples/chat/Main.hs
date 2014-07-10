@@ -5,9 +5,7 @@ module Main where
 import Prelude hiding (mapM_)
 
 import Control.Applicative
-import Control.Monad.Reader (MonadReader)
-import Control.Monad.State (MonadState)
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=))
 import Data.Foldable (mapM_)
 
