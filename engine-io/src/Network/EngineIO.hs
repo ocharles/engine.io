@@ -442,9 +442,7 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
       (wsIn, wsOut) <- liftIO $ STM.atomically $ do
         currentTransport <- STM.readTVar (socketTransport socket)
         STM.writeTChan (transOut currentTransport) (Packet Noop (TextPacket Text.empty))
-
-        wsOut <- STM.newTChan
-        return (transIn currentTransport, wsOut)
+        return (transIn currentTransport, transOut currentTransport)
 
       Packet Upgrade body <- lift (receivePacket conn)
       guard (body == TextPacket Text.empty || body == BinaryPacket BS.empty)
