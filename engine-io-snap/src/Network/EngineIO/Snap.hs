@@ -12,6 +12,8 @@ import qualified Network.WebSockets.Snap as Snap
 import qualified Snap.Core as Snap
 
 --------------------------------------------------------------------------------
+-- | A drop in 'EIO.ServerAPI' that works in any Snap monad - including both
+-- @Handler@ and @Snap@.
 snapAPI :: Snap.MonadSnap m => EIO.ServerAPI m
 snapAPI = EIO.ServerAPI
   { EIO.srvWriteBuilder = Snap.writeLBS . Builder.toLazyByteString
