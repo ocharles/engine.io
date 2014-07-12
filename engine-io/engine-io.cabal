@@ -9,6 +9,13 @@ maintainer: ollie@ocharles.org.uk
 category: Web
 build-type: Simple
 cabal-version: >=1.10
+description:
+  This library provides a Haskell implementation of
+  <https://github.com/Automattic/engine.io Engine.IO>, a library for real-time
+  client-server communication on the web. Engine.IO works with old browsers via
+  XHR long-polling, and seamlessy upgrades to web sockets. This implementation
+  supports the majority of the Engine.IO protocol, including text and binary
+  packets and the upgrading protocol.
 
 library
   exposed-modules:

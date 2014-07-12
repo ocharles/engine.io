@@ -24,10 +24,14 @@ module Network.EngineIO
   , getOpenSockets
 
     -- * The Engine.IO Protocol
+    -- This section of the API is somewhat low-level, and exposes the raw
+    -- protocol to users.
+
     -- ** Packets
   , Packet(..)
   , parsePacket
   , encodePacket
+  , PacketType
 
     -- ** Packet Contents
   , PacketContent(..)
@@ -116,9 +120,16 @@ packetTypeFromIndex i =
 
 
 --------------------------------------------------------------------------------
+-- | A single Engine.IO packet.
 data Packet = Packet !PacketType !PacketContent
   deriving (Eq, Show)
 
+
+--------------------------------------------------------------------------------
+-- | The contents attached to a packet. Engine.IO makes a clear distinction
+-- between binary data and text data. Clients will receive binary data as a
+-- Javascript @ArrayBuffer@, where as 'TextPacket's will be received as UTF-8
+-- strings.
 data PacketContent
   = BinaryPacket !BS.ByteString
   | TextPacket !Text.Text
@@ -126,12 +137,15 @@ data PacketContent
 
 
 --------------------------------------------------------------------------------
+-- | Parse bytes as an 'Packet' assuming the packet contents extends to the
+-- end-of-input.
 parsePacket :: Attoparsec.Parser Packet
 parsePacket = parsePacket' Attoparsec.takeByteString
 {-# INLINE parsePacket #-}
 
 
 --------------------------------------------------------------------------------
+-- | Parse a 'Packet', nested another parser for the body of the packet.
 parsePacket' :: Attoparsec.Parser BS.ByteString -> Attoparsec.Parser Packet
 parsePacket' body = parseBase64 <|> parseBinary <|> parseText
 
@@ -156,7 +170,15 @@ parsePacket' body = parseBase64 <|> parseBinary <|> parseText
 
 
 --------------------------------------------------------------------------------
-encodePacket :: Bool -> Packet -> Builder.Builder
+-- | Encode a 'Packet' to a 'Builder.Builder'. The first argument determines
+-- whether or not binary is supported - if not, binary data will be base 64
+-- encoded.
+encodePacket
+  :: Bool
+  -- ^ If true, all bytes can be used. Otherwise, the packet will be base 64
+  -- encoded.
+  -> Packet
+  -> Builder.Builder
 encodePacket True (Packet t (BinaryPacket bytes)) =
   Builder.word8 (packetTypeToIndex t) <>
     Builder.byteString bytes
@@ -172,11 +194,13 @@ encodePacket _ (Packet t (TextPacket bytes)) =
 
 
 --------------------------------------------------------------------------------
+-- | A 'Payload' is a stream of 0-or-more 'Packet's.
 newtype Payload = Payload (V.Vector Packet)
   deriving (Eq, Show)
 
 
 --------------------------------------------------------------------------------
+-- | Parse a stream of bytes into a 'Payload'.
 parsePayload :: Attoparsec.Parser Payload
 parsePayload = Payload <$> go
   where
@@ -194,7 +218,14 @@ parsePayload = Payload <$> go
 
 
 --------------------------------------------------------------------------------
-encodePayload :: Bool -> Payload -> Builder.Builder
+-- | Encode a 'Payload' to a 'Builder.Builder'. As with 'encodePacket', the
+-- first argument determines whether or not binary transmission is supported.
+encodePayload
+  :: Bool
+  -- ^ If true, all bytes can be used. Otherwise, the packet will be base 64
+  -- encoded.
+  -> Payload
+  -> Builder.Builder
 encodePayload supportsBinary (Payload packets) =
   let encodeOne packet =
         let bytes = encodePacket supportsBinary packet
@@ -213,7 +244,12 @@ encodePayload supportsBinary (Payload packets) =
 
 
 --------------------------------------------------------------------------------
-data TransportType = Polling | Websocket
+-- | The possible types of transports Engine.IO supports.
+data TransportType
+  = Polling
+    -- ^ XHR long polling.
+  | Websocket
+    -- ^ HTML 5 websockets.
   deriving (Eq, Show)
 
 instance Aeson.ToJSON TransportType where
@@ -224,6 +260,7 @@ instance Aeson.ToJSON TransportType where
 
 
 --------------------------------------------------------------------------------
+-- | Attempt to parse a 'TransportType' from its textual representation.
 parseTransportType :: Text.Text -> Maybe TransportType
 parseTransportType t =
   case t of
@@ -234,6 +271,8 @@ parseTransportType t =
 
 
 --------------------------------------------------------------------------------
+-- | The type of unique Engine.IO sessions. This is currently a base64-encoded
+-- random identifier.
 type SocketId = BS.ByteString
 
 
@@ -246,6 +285,7 @@ data Transport = Transport
 
 
 --------------------------------------------------------------------------------
+-- | A connected Engine.IO session.
 data Socket = Socket
   { socketId :: !SocketId
   , socketTransport :: STM.TVar Transport
@@ -261,30 +301,50 @@ instance Ord Socket where
 
 
 --------------------------------------------------------------------------------
+-- | Receive data from the client, blocking if the input queue is empty.
 receive :: Socket -> STM.STM PacketContent
 receive Socket{..} = STM.readTChan socketIncomingMessages
 {-# INLINE receive #-}
 
 
 --------------------------------------------------------------------------------
+-- | Send a packet to the client. This is a non-blocking write.
 send :: Socket -> PacketContent -> STM.STM ()
 send Socket{..} = STM.writeTChan socketOutgoingMessages
 {-# INLINE send #-}
 
 
 --------------------------------------------------------------------------------
+-- | A dictionary of functions that Engine.IO needs in order to provide
+-- communication channels.
 data ServerAPI m = ServerAPI
   { srvGetQueryParams :: m (HashMap.HashMap BS.ByteString [BS.ByteString])
+    -- ^ Retrieve the 'HashMap.HashMap' of query parameters in the request path
+    -- to their zero-or-more values.
+
   , srvWriteBuilder :: Builder.Builder -> m ()
+    -- ^ Write a 'Builder.Bulider' to the response.
+
   , srvSetContentType :: BS.ByteString -> m ()
+    -- ^ Set the @Content-Type@ header of the response.
+
   , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m a
+    -- ^ Run a 'Attoparsec.Parser' against the request body.
+
   , srvGetRequestMethod :: m BS.ByteString
+    -- ^ Get the request method of the current request. The request method
+    -- should be in uppercase for standard methods (e.g., @GET@).
+
   , srvRunWebSocket :: WebSockets.ServerApp -> m ()
+    -- ^ Upgrade the current connection to run a WebSocket action.
+
   , srvSetResponseCode :: Int -> m ()
+    -- ^ Set the response code of the response.
   }
 
 
 --------------------------------------------------------------------------------
+-- | An opaque data type representing an open Engine.IO server.
 data EngineIO = EngineIO
   { eioOpenSessions :: STM.TVar (HashMap.HashMap SocketId Socket)
   , eioRng :: MVar Random.GenIO
@@ -292,6 +352,8 @@ data EngineIO = EngineIO
 
 
 --------------------------------------------------------------------------------
+-- | 'initialize' initializes a new Engine.IO server. You can later serve this
+-- session by using 'handler'.
 initialize :: IO EngineIO
 initialize =
   EngineIO
@@ -300,6 +362,7 @@ initialize =
 
 
 --------------------------------------------------------------------------------
+-- | Retrieve a list of /all/ currently open Engine.IO sessions.
 getOpenSockets :: EngineIO -> STM.STM (HashMap.HashMap SocketId Socket)
 getOpenSockets = STM.readTVar . eioOpenSessions
 
@@ -310,13 +373,32 @@ data EngineIOError = BadRequest | TransportUnknown | SessionIdUnknown
 
 
 --------------------------------------------------------------------------------
+-- | The application to run for the duration of a connected socket.
 data SocketApp = SocketApp
   { saApp :: IO ()
+    -- ^ An IO action to run for the duration of the socket's lifetime. If this
+    -- action terminates, the connection will be closed. You will likely want
+    -- to loop 'Control.Monad.forever' and block as appropriate with 'receive'.
+
   , saOnDisconnect :: IO ()
+    -- ^ An action to execute when the connection is closed, either by 'saApp'
+    -- terminating, or the client disconnecting.
   }
 
 
 --------------------------------------------------------------------------------
+{-|
+
+Build the necessary handler for Engine.IO. The result of this function is a
+computation that you should serve under the @/engine.io/@ path.
+
+'handler' takes a function as an argument that is called every time a new
+session is created. This function runs in the @m@ monad, so you have access to
+initial web request, which may be useful for performing authentication or
+collecting cookies. This function then returns a 'ServerApp', describing the
+main loop and an action to perform on socket disconnection.
+
+-}
 handler :: MonadIO m => EngineIO -> (Socket -> m SocketApp) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
@@ -572,14 +654,14 @@ serveError ServerAPI{..} e = do
 
 {- $intro
 
-'Network.EngineIO' is a Haskell of implementation of
+@Network.EngineIO@ is a Haskell of implementation of
 <https://github.com/automattic/engine.io Engine.IO>, a realtime framework for
 the web. Engine.IO provides you with an abstraction for doing real-time
 communication between a server and a client. Engine.IO abstracts the framing and
 transport away, so that you can have real-time communication over long-polling
 HTTP requests, which are later upgraded to web sockets, if available.
 
-'Network.EngineIO' needs to be provided with a 'ServerAPI' in order to be
+@Network.EngineIO@ needs to be provided with a 'ServerAPI' in order to be
 ran. 'ServerAPI' informs us how to fetch request headers, write HTTP responses
 to the client, and run web socket applications. Hackage contains implementations
 of 'ServerAPI' as:
