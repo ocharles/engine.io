@@ -6,6 +6,7 @@ author: Oliver Charles
 maintainer: ollie@ocharles.org.uk
 build-type: Simple
 cabal-version: >=1.10
+extra-source-files: Changelog.md
 
 library
   exposed-modules:
