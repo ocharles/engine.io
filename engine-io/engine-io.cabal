@@ -17,6 +17,8 @@ description:
   supports the majority of the Engine.IO protocol, including text and binary
   packets and the upgrading protocol.
 
+extra-source-files: Changelog.md
+
 library
   exposed-modules:
     Network.EngineIO
