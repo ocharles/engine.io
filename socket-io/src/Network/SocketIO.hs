@@ -1,31 +1,27 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.SocketIO
-  ( -- * Packet Types
-    PacketType(..)
-  , parsePacketType
-  , encodePacketType
-
-    -- * Packets
-  , Packet(..)
-  , parsePacket
-  , encodePacket
-
+  ( -- $intro
     -- * Running Socket.IO Applications
-  , initialize
-  , EventHandler
+    initialize
 
+    -- * Receiving events
+  , RoutingTable
   , on
   , on_
   , onJSON
-
   , appendDisconnectHandler
 
+  -- * Emitting Events
+  , EventHandler
+
+  -- ** To One Client
   , emit
   , emitJSON
   , emitTo
   , emitJSONTo
 
+    -- ** To Many Clients
   , broadcast
   , broadcastJSON
 
@@ -33,8 +29,16 @@ module Network.SocketIO
   , Socket
   , socketId
 
-    -- * RoutingTable
-  , RoutingTable
+  -- * Protocol Types
+  -- ** Packet Types
+  , PacketType(..)
+  , parsePacketType
+  , encodePacketType
+
+    -- ** Packets
+  , Packet(..)
+  , parsePacket
+  , encodePacket
   ) where
 
 import Control.Applicative
@@ -97,11 +101,7 @@ encodePacketType t =
 
 
 --------------------------------------------------------------------------------
-type Attachments = Int
-type Namespace = Text.Text
-type PacketId = Int
-
-data Packet = Packet !PacketType !(Maybe Attachments) !Namespace !(Maybe PacketId) !(Maybe Aeson.Value)
+data Packet = Packet !PacketType !(Maybe Int) !Text.Text !(Maybe Int) !(Maybe Aeson.Value)
   deriving (Eq, Show)
 
 
@@ -140,6 +140,22 @@ type EventHandler a = ReaderT Socket IO a
 
 
 --------------------------------------------------------------------------------
+{-|
+
+This computation initializes a Socket.IO server and /returns/ a computation that
+you should call whenever a request comes in to the @/socket.io/@ path. For
+example, in a Snap application, you might do:
+
+> handler <- initialize snapAPI mkRoutes
+> quickHttpServe $ route [("/socket.io", handler)]
+
+The second argument to this function is an action to build up the routing table,
+which determines what happens when clients emit events. It is also an action
+that is called every time a client connects, so you can mutate state by taking
+advantage of the 'MonadIO' instance. You can build a routing table by using the
+convenience 'on' family of functions.
+
+-}
 initialize
   :: MonadIO m
   => EIO.ServerAPI m
@@ -180,6 +196,7 @@ initialize api socketHandler = do
 
 
 --------------------------------------------------------------------------------
+-- | A Socket.IO socket (not to be confused with an Engine.IO 'EIO.Socket').
 data Socket = Socket { socketEIOSocket :: EIO.Socket
                      , socketEIO :: EIO.EngineIO
                      }
@@ -190,11 +207,14 @@ instance Eq Socket where
 instance Ord Socket where
   compare = comparing socketEIOSocket
 
+-- | Retrieve the Engine.IO 'EIO.SocketId' for a 'Socket'.
 socketId :: Socket -> EIO.SocketId
 socketId = EIO.socketId . socketEIOSocket
 
 
 --------------------------------------------------------------------------------
+-- | A per-connection routing table. This table determines what actions to
+-- invoke when events are received.
 data RoutingTable = RoutingTable
   { rtEvents :: HashMap.HashMap Text.Text (Aeson.Array -> MaybeT (ReaderT Socket IO) ())
   , rtDisconnect :: EIO.SocketId -> IO ()
@@ -202,6 +222,8 @@ data RoutingTable = RoutingTable
 
 
 --------------------------------------------------------------------------------
+-- | When an event with a given name is received, call the associated function
+-- with the array of JSON arguments.
 onJSON
   :: (MonadState RoutingTable m, Applicative m)
   => Text.Text
@@ -218,6 +240,9 @@ onJSON eventName handler =
 
 
 --------------------------------------------------------------------------------
+-- | When an event with a given name is received, and its arguments can be
+-- decoded by a 'Aeson.FromJSON' instance, run the associated function
+-- after decoding the event arguments.
 on
   :: (MonadState RoutingTable m, Aeson.FromJSON arg, Applicative m)
   => Text.Text
@@ -240,6 +265,8 @@ on eventName handler =
 
 
 --------------------------------------------------------------------------------
+-- | When an event is received with a given name and no arguments, run the
+-- associated 'EventHandler'.
 on_
   :: (MonadState RoutingTable m, Applicative m)
   => Text.Text
@@ -258,6 +285,8 @@ on_ eventName handler =
 
 
 --------------------------------------------------------------------------------
+-- | Run the given IO action when a client disconnects, along with any other
+-- previously register disconnect handlers.
 appendDisconnectHandler
   :: MonadState RoutingTable m => (EIO.SocketId -> IO ()) -> m ()
 appendDisconnectHandler handler = modify $ \rt -> rt
@@ -266,21 +295,27 @@ appendDisconnectHandler handler = modify $ \rt -> rt
   }
 
 --------------------------------------------------------------------------------
+-- | Emit an event and argument data to a 'Socket'. If called from within 'on',
+-- this will be the client that emitted the original event.
 emit :: (Aeson.ToJSON a, MonadReader Socket m, MonadIO m) => Text.Text -> a -> m ()
 emit n x = emitJSON n (V.singleton (Aeson.toJSON x))
 
 
 --------------------------------------------------------------------------------
+-- | Emit an event to specific 'Socket'.
 emitTo :: (Aeson.ToJSON a, MonadIO m) => Socket -> Text.Text -> a -> m ()
 emitTo s n x = emitJSONTo s n (V.singleton (Aeson.toJSON x))
 
 
 --------------------------------------------------------------------------------
+-- | Emit an event with a specific array of 'JSON' arguments.
 emitJSON :: (MonadReader Socket m, MonadIO m) => Text.Text -> Aeson.Array -> m ()
 emitJSON n args = ask >>= \s -> emitJSONTo s n args
 
 
 --------------------------------------------------------------------------------
+-- | Emit an event with a specific array of 'JSON' arguments to a specific
+-- 'Socket'.
 emitJSONTo :: (MonadIO m) => Socket -> Text.Text -> Aeson.Array -> m ()
 emitJSONTo s n args =
   emitPacketTo s (Packet Event Nothing "/" Nothing (Just (Aeson.Array (V.cons (Aeson.String n) args))))
@@ -294,12 +329,15 @@ emitPacketTo socket packet =
 
 
 --------------------------------------------------------------------------------
+-- | Broadcast an event with an array of JSON arguments to all /other/
+-- 'Socket's.
 broadcastJSON :: (MonadReader Socket m, MonadIO m) => Text.Text -> Aeson.Array -> m ()
 broadcastJSON n args =
   broadcastPacket (Packet Event Nothing "/" Nothing (Just (Aeson.Array (V.cons (Aeson.String n) args))))
 
 
 --------------------------------------------------------------------------------
+-- | Broadcast an event to all /other/ 'Socket's.
 broadcast :: (Aeson.ToJSON a, MonadReader Socket m, MonadIO m) => Text.Text -> a -> m ()
 broadcast n x = broadcastJSON n (V.singleton (Aeson.toJSON x))
 
@@ -315,3 +353,24 @@ broadcastPacket packet = do
   liftIO $ STM.atomically $ do
     sockets <- HashMap.delete (EIO.socketId t) <$> EIO.getOpenSockets eio
     forM_ sockets (flip EIO.send eioPacket)
+
+{-$intro
+
+This library provides an implementation of <http://socket.io Socket.io> protocol
+(version 1). It builds on top of Engine.IO, allowing Socket.io to work with both
+long polling XHR requests, and seamlessly upgrading them to HTML 5 web sockets.
+
+-}
+
+{-$limitations
+
+This implementation has the following limitations:
+
+* Namespaces other than @/@ are not supported.
+* Binary event data is not yet supported - only JSON events are supported.
+
+If any of these are important to you, don't hesistate to
+<http://github.com/ocharles/engine.io raise an issue> and I'll try and make it a
+priority.
+
+-}

@@ -7,6 +7,11 @@ maintainer: ollie@ocharles.org.uk
 build-type: Simple
 cabal-version: >=1.10
 extra-source-files: Changelog.md
+description:
+  This library provides an implementation of <http://socket.io Socket.io>
+  protocol (version 1). It builds on top of Engine.IO, allowing Socket.io to
+  work with both long polling XHR requests, and seamlessly upgrading them to
+  HTML 5 web sockets.
 
 library
   exposed-modules:
