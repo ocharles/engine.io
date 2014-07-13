@@ -6,6 +6,7 @@ import Prelude hiding (mapM_)
 
 import Control.Applicative
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.State (StateT)
 import Data.Aeson ((.=))
 import Data.Foldable (mapM_)
 
@@ -62,7 +63,7 @@ instance Aeson.ToJSON UserJoined where
 --------------------------------------------------------------------------------
 data ServerState = ServerState { ssNConnected :: STM.TVar Int }
 
-server :: ServerState -> SocketIO.Router ()
+server :: ServerState -> StateT SocketIO.RoutingTable IO ()
 server state = do
   userNameMVar <- liftIO STM.newEmptyTMVarIO
   let forUserName m = liftIO (STM.atomically (STM.tryReadTMVar userNameMVar)) >>= mapM_ m
