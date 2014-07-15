@@ -73,6 +73,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.ByteString as Attoparsec
 import qualified Data.Attoparsec.ByteString.Char8 as AttoparsecC8
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSChar8
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LBS
@@ -566,8 +567,10 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
         putStrLn $ "Unknown WebSocket message: " ++ show other
         receivePacket conn
 
-  sendPacket conn p@(Packet _ (TextPacket _)) = do
-    WebSockets.sendTextData conn (Builder.toLazyByteString (encodePacket False p))
+  sendPacket conn (Packet t (TextPacket text)) =
+    WebSockets.sendTextData conn $
+      Text.encodeUtf8 $ Text.pack $ BSChar8.unpack $ Text.encodeUtf8 $
+        Text.pack (pure $ intToDigit (packetTypeToIndex t)) <> text
 
   sendPacket conn p@(Packet _ (BinaryPacket _)) = do
     WebSockets.sendBinaryData conn (Builder.toLazyByteString (encodePacket True p))
