@@ -32,6 +32,14 @@ snapAPI = EIO.ServerAPI
       return $ case m of
         Snap.GET -> "GET"
         Snap.POST -> "POST"
+        Snap.HEAD -> "HEAD"
+        Snap.PUT -> "PUT"
+        Snap.DELETE -> "DELETE"
+        Snap.TRACE -> "TRACE"
+        Snap.OPTIONS -> "OPTIONS"
+        Snap.CONNECT -> "CONNECT"
+        Snap.PATCH -> "PATCH"
+        Snap.Method method -> method
 
   , EIO.srvRunWebSocket = Snap.runWebSocketsSnap
   }
