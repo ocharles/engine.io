@@ -5,7 +5,7 @@ module Main where
 import Prelude hiding (mapM_)
 
 import Control.Applicative
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.State (StateT)
 import Data.Aeson ((.=))
 import Data.Foldable (mapM_)
@@ -15,8 +15,11 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import qualified Network.EngineIO.Snap as EIOSnap
 import qualified Network.SocketIO as SocketIO
-import qualified Snap.CORS as CORS
+import qualified Snap.Core as Snap
+import qualified Snap.Util.FileServe as Snap
 import qualified Snap.Http.Server as Snap
+
+import Paths_chat (getDataDir)
 
 --------------------------------------------------------------------------------
 data AddUser = AddUser Text.Text
@@ -63,7 +66,7 @@ instance Aeson.ToJSON UserJoined where
 --------------------------------------------------------------------------------
 data ServerState = ServerState { ssNConnected :: STM.TVar Int }
 
-server :: ServerState -> StateT SocketIO.RoutingTable IO ()
+--server :: ServerState -> StateT SocketIO.RoutingTable Snap.Snap ()
 server state = do
   userNameMVar <- liftIO STM.newEmptyTMVarIO
   let forUserName m = liftIO (STM.atomically (STM.tryReadTMVar userNameMVar)) >>= mapM_ m
@@ -95,5 +98,9 @@ server state = do
 main :: IO ()
 main = do
   state <- ServerState <$> STM.newTVarIO 0
-  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (return $ server state)
-  Snap.quickHttpServe $ CORS.applyCORS CORS.defaultOptions socketIoHandler
+  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (server state)
+  dataDir <- getDataDir
+  Snap.quickHttpServe $
+    Snap.route [ ("/socket.io", socketIoHandler)
+               , ("/", Snap.serveDirectory dataDir)
+               ]
