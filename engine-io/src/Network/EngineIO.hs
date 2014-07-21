@@ -82,6 +82,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Vector as V
 import qualified Network.WebSockets as WebSockets
+import qualified Network.WebSockets.Connection as WebSockets
 import qualified System.Random.MWC as Random
 
 --------------------------------------------------------------------------------
@@ -516,7 +517,9 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
   where
 
   go pending = do
-    conn <- WebSockets.acceptRequest pending
+    conn <- WebSockets.acceptRequest $
+      -- We do our ping/pong, so disable `websockets` doing this.
+      pending { WebSockets.pendingOnAccept = (const $ return ()) }
 
     mWsTransport <- runMaybeT $ do
       Packet Ping (TextPacket "probe") <- lift (receivePacket conn)
