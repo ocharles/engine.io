@@ -324,11 +324,10 @@ data ServerAPI m = ServerAPI
     -- ^ Retrieve the 'HashMap.HashMap' of query parameters in the request path
     -- to their zero-or-more values.
 
-  , srvWriteBuilder :: Builder.Builder -> m ()
-    -- ^ Write a 'Builder.Bulider' to the response.
-
-  , srvSetContentType :: BS.ByteString -> m ()
-    -- ^ Set the @Content-Type@ header of the response.
+  , srvTerminateWithResponse :: Int -> BS.ByteString -> Builder.Builder -> forall a . m a
+    -- ^ Send a response with the given status code, content type and body. This
+    -- should also terminate the web request entirely, such that further actions
+    -- in @m@ have no effect.
 
   , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m a
     -- ^ Run a 'Attoparsec.Parser' against the request body.
@@ -340,8 +339,6 @@ data ServerAPI m = ServerAPI
   , srvRunWebSocket :: WebSockets.ServerApp -> m ()
     -- ^ Upgrade the current connection to run a WebSocket action.
 
-  , srvSetResponseCode :: Int -> m ()
-    -- ^ Set the response code of the response.
   }
 
 
@@ -604,10 +601,9 @@ handlePoll api@ServerAPI{..} transport supportsBinary = do
 
 
 --------------------------------------------------------------------------------
-writeBytes :: Monad m => ServerAPI m -> Builder.Builder -> m ()
+writeBytes :: Monad m => ServerAPI m -> Builder.Builder -> m a
 writeBytes ServerAPI {..} builder = do
-  srvWriteBuilder builder
-  srvSetContentType "application/octet-stream"
+  srvTerminateWithResponse 200 "application/octet-stream" builder
 {-# INLINE writeBytes #-}
 
 
@@ -637,11 +633,9 @@ instance Aeson.ToJSON OpenMessage where
 
 
 --------------------------------------------------------------------------------
-serveError :: Monad m => ServerAPI m -> EngineIOError -> m ()
-serveError ServerAPI{..} e = do
-  srvSetResponseCode 400
-  srvSetContentType "application/json"
-  srvWriteBuilder $ Builder.lazyByteString $ Aeson.encode $ Aeson.object
+serveError :: Monad m => ServerAPI m -> EngineIOError -> m a
+serveError ServerAPI{..} e = srvTerminateWithResponse 400 "application/json" $
+  Builder.lazyByteString $ Aeson.encode $ Aeson.object
     [ "code" .= errorCode, "message" .= errorMessage ]
 
   where

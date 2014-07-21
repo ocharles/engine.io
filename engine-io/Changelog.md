@@ -1,3 +1,12 @@
+## 1.1.0
+
+* The `ServerAPI` functions `srvWriteBuilder`, `srvSetContentType` and
+  `srvSetResponseCode` have been merged into a single function:
+  `srvTerminateWithResponse`. This should allow `ServerAPI` to be provided for
+  Yesod.
+
+  Thanks to Tim Baumann (@timjb) for this change.
+
 ## 1.0.2
 
 * The `ping` thread spawned by `websockets` is now disabled, as it has been

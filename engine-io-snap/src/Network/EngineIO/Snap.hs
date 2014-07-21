@@ -16,9 +16,10 @@ import qualified Snap.Core as Snap
 -- @Handler@ and @Snap@.
 snapAPI :: Snap.MonadSnap m => EIO.ServerAPI m
 snapAPI = EIO.ServerAPI
-  { EIO.srvWriteBuilder = Snap.writeLBS . Builder.toLazyByteString
-
-  , EIO.srvSetContentType = Snap.modifyResponse . Snap.setContentType
+  { EIO.srvTerminateWithResponse = \code ct body -> do
+      Snap.modifyResponse $ Snap.setResponseCode code . Snap.setContentType ct
+      Snap.writeLBS $ Builder.toLazyByteString body
+      Snap.getResponse >>= Snap.finishWith
 
   , EIO.srvGetQueryParams =
       LMap.foldlWithKey' (\m k v -> HashMap.insert k v m) HashMap.empty
@@ -33,6 +34,4 @@ snapAPI = EIO.ServerAPI
         Snap.POST -> "POST"
 
   , EIO.srvRunWebSocket = Snap.runWebSocketsSnap
-
-  , EIO.srvSetResponseCode = Snap.modifyResponse . Snap.setResponseCode
   }
