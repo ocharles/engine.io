@@ -1,0 +1,35 @@
+name: engine-io-yesod
+version: 1.0.0
+license: BSD3
+license-file: LICENSE
+author: Tim Baumann
+maintainer: tim@timbaumann.info
+category: Network
+build-type: Simple
+-- extra-source-files:  
+cabal-version: >=1.10
+description:
+  This package provides an @engine-io@ @ServerAPI@ that is compatible with
+  <http://www.yesodweb.com/ Yesod>.
+
+library
+  exposed-modules:
+    Network.EngineIO.Yesod
+
+  build-depends:
+    base >=4.6 && <4.8,
+    yesod-core >= 1.2.16.1 && < 1.3,
+    engine-io >= 1.1.0 && < 1.2,
+    http-types >= 0.8 && < 0.9,
+    unordered-containers >= 0.2 && < 0.3,
+    wai >= 3.0 && < 3.1,
+    text >= 1.1 && < 1.2,
+    bytestring >= 0.9 && <0.11,
+    conduit >= 1.1 && < 1.2,
+    conduit-extra >= 1.1 && < 1.2,
+    websockets >= 0.8.2.6 && < 0.9,
+    wai-websockets >= 3 && < 3.1
+
+  hs-source-dirs: src
+  default-language: Haskell2010
+  ghc-options: -Wall -O2
