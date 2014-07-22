@@ -9,42 +9,6 @@ category: Web
 build-type: Simple
 cabal-version: >=1.10
 
-Executable chat-example
-  default-language: Haskell2010
-  main-is: chat/Main.hs
-  build-depends:
-    aeson,
-    base,
-    engine-io,
-    engine-io-snap,
-    mtl,
-    snap-cors,
-    snap-server,
-    socket-io,
-    stm,
-    text,
-    transformers
-
-  ghc-options: -Wall
-
-Executable latency-example
-  default-language: Haskell2010
-  main-is: latency/Main.hs
-  build-depends:
-    aeson,
-    base,
-    engine-io,
-    engine-io-snap,
-    mtl,
-    snap-cors,
-    snap-server,
-    socket-io,
-    stm,
-    text,
-    transformers
-
-  ghc-options: -Wall -O2
-
 Executable binary
   default-language: Haskell2010
   main-is: binary/Main.hs
