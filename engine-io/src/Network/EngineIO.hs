@@ -588,10 +588,25 @@ handlePoll api@ServerAPI{..} transport supportsBinary = do
   where
 
   poll = do
+    readTimeout <- liftIO $ STM.registerDelay (45 * 1000000)
+
     let out = transOut transport
-    packets <- liftIO $
-      (:) <$> STM.atomically (STM.readTChan out)
-          <*> unfoldM (STM.atomically (STM.tryReadTChan (transOut transport)))
+
+    -- Here we attempt to read as much from the transport output as we can.
+    -- We add a timeout alternative to
+    packets <- liftIO $ do
+      p <- STM.atomically $ do
+        let dequeueHead = Just <$> STM.readTChan out
+            timeout = Nothing <$ (STM.readTVar readTimeout >>= STM.check)
+
+        dequeueHead <|> timeout
+
+      case p of
+        Just p' ->
+          (p' :) <$> unfoldM (STM.atomically (STM.tryReadTChan (transOut transport)))
+
+        Nothing ->
+          return [ Packet Ping (BinaryPacket mempty) ]
 
     writeBytes api (encodePayload supportsBinary (Payload (V.fromList packets)))
 
