@@ -1,4 +1,4 @@
-# `engine-io` and `socket-io`
+# `engine-io` and `socket-io` examples
 
 This folder contains a few example applications build with `engine-io` and
 `socket-io`. To run these applications, simply `cd` into the example's
