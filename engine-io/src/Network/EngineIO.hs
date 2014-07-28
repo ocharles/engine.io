@@ -71,13 +71,14 @@ import Data.Traversable (for)
 
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM as STM
+import qualified Control.Concurrent.STM.Delay as STMDelay
 import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.ByteString as Attoparsec
 import qualified Data.Attoparsec.ByteString.Char8 as AttoparsecC8
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSChar8
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Char8 as BSChar8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
@@ -476,6 +477,10 @@ freshSession eio socketHandler api supportsBinary = do
   app <- socketHandler socket
   userSpace <- liftIO $ Async.async (saApp app)
 
+  pingTimeoutDelay <- liftIO $ STMDelay.newDelay (pingTimeout * 1000000)
+  heartbeat <- liftIO $ Async.async $
+    STM.atomically (STMDelay.waitDelay pingTimeoutDelay)
+
   brain <- liftIO $ Async.async $ fix $ \loop -> do
     mMessage <- STM.atomically $ do
       transport <- STM.readTVar (socketTransport socket)
@@ -501,17 +506,21 @@ freshSession eio socketHandler api supportsBinary = do
         ]
 
     case mMessage of
-      Just (Packet Close _) -> return ()
-      _ -> loop
+      Just (Packet Close _) ->
+        return ()
+
+      _ -> do
+        STMDelay.updateDelay pingTimeoutDelay (pingTimeout * 1000000)
+        loop
 
   _ <- liftIO $ Async.async $ do
-    _ <- Async.waitAnyCatchCancel [ userSpace, brain ]
+    _ <- Async.waitAnyCatchCancel [ userSpace, brain, heartbeat ]
     STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete (socketId socket)))
     saOnDisconnect app
 
   let openMessage = OpenMessage { omSocketId = socketId socket
                                 , omUpgrades = [ Websocket ]
-                                , omPingTimeout = 60000
+                                , omPingTimeout = pingTimeout * 1000
                                 , omPingInterval = 25000
                                 }
 
@@ -520,6 +529,9 @@ freshSession eio socketHandler api supportsBinary = do
 
   writeBytes api (encodePayload supportsBinary payload)
 
+  where
+
+  pingTimeout = 60
 
 --------------------------------------------------------------------------------
 upgrade :: MonadIO m => ServerAPI m -> Socket -> m ()
