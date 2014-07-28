@@ -9,6 +9,10 @@ module Network.SocketIO
   , RoutingTable
   , on
   , on_
+  , on2
+  , on3
+  , on4
+  , on5
   , onJSON
   , appendDisconnectHandler
 
@@ -42,7 +46,7 @@ module Network.SocketIO
   ) where
 
 import Control.Applicative
-import Control.Monad (forever, guard, mzero, void)
+import Control.Monad (forever, guard, mzero, void, liftM2, liftM3, liftM4, liftM5)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ask, asks)
 import Control.Monad.State (MonadState, modify)
@@ -220,6 +224,20 @@ data RoutingTable = RoutingTable
   , rtDisconnect :: EIO.SocketId -> IO ()
   }
 
+addEventHandler
+  :: (MonadState RoutingTable m)
+  => Text.Text
+  -> (Aeson.Array -> MaybeT (ReaderT Socket IO) a)
+  -> m ()
+addEventHandler eventName eventHandler =
+  modify $ \rt -> rt
+    { rtEvents =
+        HashMap.insertWith (\new old json -> old json <|> new json)
+                           eventName
+                           (void . eventHandler)
+                           (rtEvents rt)
+    }
+
 
 --------------------------------------------------------------------------------
 -- | When an event with a given name is received, call the associated function
@@ -229,14 +247,7 @@ onJSON
   => Text.Text
   -> (Aeson.Array -> EventHandler a)
   -> m ()
-onJSON eventName handler =
-  modify $ \rt -> rt
-    { rtEvents =
-        HashMap.insertWith (\new old json -> old json <|> new json)
-                           eventName
-                           (void . lift . handler)
-                           (rtEvents rt)
-    }
+onJSON eventName = addEventHandler eventName . fmap lift
 
 
 --------------------------------------------------------------------------------
@@ -249,19 +260,11 @@ on
   -> (arg -> EventHandler a)
   -> m ()
 on eventName handler =
-  let eventHandler v = do
-        [x] <- return (V.toList v)
-        case Aeson.fromJSON x of
-          Aeson.Success s -> lift (handler s)
-          Aeson.Error _ -> mzero
-
-  in modify $ \rt -> rt
-       { rtEvents =
-           HashMap.insertWith (\new old json -> old json <|> new json)
-                              eventName
-                              (void . eventHandler)
-                              (rtEvents rt)
-       }
+  addEventHandler eventName $ \v -> do
+    [x] <- return (V.toList v)
+    case Aeson.fromJSON x of
+      Aeson.Success s -> lift (handler s)
+      Aeson.Error _ -> mzero
 
 
 --------------------------------------------------------------------------------
@@ -285,6 +288,70 @@ on_ eventName handler =
 
 
 --------------------------------------------------------------------------------
+-- | When an event is received with a given name and two arguments, run the
+-- associated 'EventHandler' after decoding both arguments.
+on2
+  :: (MonadState RoutingTable m, Aeson.FromJSON arg1, Aeson.FromJSON arg2)
+  => Text.Text
+  -> (arg1 -> arg2 -> EventHandler a)
+  -> m ()
+on2 eventName handler =
+  addEventHandler eventName $ \v -> do
+    [a1,a2] <- return (V.toList v)
+    case liftM2 handler (Aeson.fromJSON a1) (Aeson.fromJSON a2) of
+      Aeson.Success m -> lift m
+      Aeson.Error _ -> mzero
+
+
+--------------------------------------------------------------------------------
+-- | When an event is received with a given name and three arguments, run the
+-- associated 'EventHandler' after decoding the arguments.
+on3
+  :: (MonadState RoutingTable m, Aeson.FromJSON arg1, Aeson.FromJSON arg2, Aeson.FromJSON arg3)
+  => Text.Text
+  -> (arg1 -> arg2 -> arg3 -> EventHandler a)
+  -> m ()
+on3 eventName handler =
+  addEventHandler eventName $ \v -> do
+    [a1,a2,a3] <- return (V.toList v)
+    case liftM3 handler (Aeson.fromJSON a1) (Aeson.fromJSON a2) (Aeson.fromJSON a3) of
+      Aeson.Success m -> lift m
+      Aeson.Error _ -> mzero
+
+
+--------------------------------------------------------------------------------
+-- | When an event is received with a given name and four arguments, run the
+-- associated 'EventHandler' after decoding the arguments.
+on4
+  :: (MonadState RoutingTable m, Aeson.FromJSON arg1, Aeson.FromJSON arg2, Aeson.FromJSON arg3, Aeson.FromJSON arg4)
+  => Text.Text
+  -> (arg1 -> arg2 -> arg3 -> arg4 -> EventHandler a)
+  -> m ()
+on4 eventName handler =
+  addEventHandler eventName $ \v -> do
+    [a1,a2,a3,a4] <- return (V.toList v)
+    case liftM4 handler (Aeson.fromJSON a1) (Aeson.fromJSON a2) (Aeson.fromJSON a3) (Aeson.fromJSON a4) of
+      Aeson.Success m -> lift m
+      Aeson.Error _ -> mzero
+
+
+--------------------------------------------------------------------------------
+-- | When an event is received with a given name and five arguments, run the
+-- associated 'EventHandler' after decoding the arguments.
+on5
+  :: (MonadState RoutingTable m, Aeson.FromJSON arg1, Aeson.FromJSON arg2, Aeson.FromJSON arg3, Aeson.FromJSON arg4, Aeson.FromJSON arg5)
+  => Text.Text
+  -> (arg1 -> arg2 -> arg3 -> arg4 -> arg5 -> EventHandler a)
+  -> m ()
+on5 eventName handler =
+  addEventHandler eventName $ \v -> do
+    [a1,a2,a3,a4,a5] <- return (V.toList v)
+    case liftM5 handler (Aeson.fromJSON a1) (Aeson.fromJSON a2) (Aeson.fromJSON a3) (Aeson.fromJSON a4) (Aeson.fromJSON a5) of
+      Aeson.Success m -> lift m
+      Aeson.Error _ -> mzero
+
+
+--------------------------------------------------------------------------------
 -- | Run the given IO action when a client disconnects, along with any other
 -- previously register disconnect handlers.
 appendDisconnectHandler
@@ -293,6 +360,7 @@ appendDisconnectHandler handler = modify $ \rt -> rt
   { rtDisconnect = \sId -> do rtDisconnect rt sId
                               handler sId
   }
+
 
 --------------------------------------------------------------------------------
 -- | Emit an event and argument data to a 'Socket'. If called from within 'on',
