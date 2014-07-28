@@ -51,7 +51,7 @@ import Prelude hiding (any)
 import Control.Applicative
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (SomeException(SomeException), try)
-import Control.Monad (MonadPlus, forever, guard, mzero, replicateM)
+import Control.Monad (MonadPlus, forever, guard, mzero, replicateM, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
 import Control.Monad.Trans.Class (lift)
@@ -59,7 +59,7 @@ import Control.Monad.Trans.Either (eitherT, left)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
 import Data.Char (digitToInt, intToDigit)
-import Data.Foldable (asum, for_)
+import Data.Foldable (for_)
 import Data.Function (fix, on)
 import Data.Ix (inRange)
 import Data.List (foldl')
@@ -69,13 +69,14 @@ import Data.Traversable (for)
 
 import qualified Control.Concurrent.Async as Async
 import qualified Control.Concurrent.STM as STM
+import qualified Control.Concurrent.STM.Delay as STMDelay
 import qualified Data.Aeson as Aeson
 import qualified Data.Attoparsec.ByteString as Attoparsec
 import qualified Data.Attoparsec.ByteString.Char8 as AttoparsecC8
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSChar8
 import qualified Data.ByteString.Base64 as Base64
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Char8 as BSChar8
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Text as Text
@@ -292,7 +293,6 @@ data Socket = Socket
   { socketId :: !SocketId
   , socketTransport :: STM.TVar Transport
   , socketIncomingMessages :: STM.TChan PacketContent
-  , socketOutgoingMessages :: STM.TChan PacketContent
   }
 
 instance Eq Socket where
@@ -312,7 +312,9 @@ receive Socket{..} = STM.readTChan socketIncomingMessages
 --------------------------------------------------------------------------------
 -- | Send a packet to the client. This is a non-blocking write.
 send :: Socket -> PacketContent -> STM.STM ()
-send Socket{..} = STM.writeTChan socketOutgoingMessages
+send Socket{..} content = do
+  transport <- STM.readTVar socketTransport
+  STM.writeTChan (transOut transport) (Packet Message content)
 {-# INLINE send #-}
 
 
@@ -456,48 +458,47 @@ freshSession eio socketHandler api supportsBinary = do
                                           <*> pure Polling
                    STM.newTVarIO transport)
            <*> STM.newTChanIO
-           <*> STM.newTChanIO
 
   liftIO $ STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert sId socket))
 
   app <- socketHandler socket
-  userSpace <- liftIO $ Async.async (saApp app)
 
-  brain <- liftIO $ Async.async $ fix $ \loop -> do
-    mMessage <- STM.atomically $ do
-      transport <- STM.readTVar (socketTransport socket)
-      asum
-        [ do req <- STM.readTChan (transIn transport)
-             case req of
-               Packet Message m ->
-                 STM.writeTChan (socketIncomingMessages socket) m
+  liftIO $ do
+    userSpace <- Async.async (saApp app)
 
-               Packet Ping m ->
-                 STM.writeTChan (transOut transport) (Packet Pong m)
+    pingTimeoutDelay <- STMDelay.newDelay (pingTimeout * 1000000)
+    heartbeat <- Async.async $
+      STM.atomically (STMDelay.waitDelay pingTimeoutDelay)
 
-               _ ->
-                 return ()
+    brain <- Async.async $ fix $ \loop -> do
+      message <- STM.atomically $ do
+        transport <- STM.readTVar (socketTransport socket)
+        req <- STM.readTChan (transIn transport)
+        case req of
+          Packet Message m ->
+            STM.writeTChan (socketIncomingMessages socket) m
 
-             return (Just req)
+          Packet Ping m ->
+            STM.writeTChan (transOut transport) (Packet Pong m)
 
-        , do STM.readTChan (socketOutgoingMessages socket)
-               >>= STM.writeTChan (transOut transport) . Packet Message
+          _ ->
+            return ()
 
-             return Nothing
-        ]
+        return req
 
-    case mMessage of
-      Just (Packet Close _) -> return ()
-      _ -> loop
+      STMDelay.updateDelay pingTimeoutDelay (pingTimeout * 1000000)
+      case message of
+        Packet Close _ -> return ()
+        _ -> loop
 
-  _ <- liftIO $ Async.async $ do
-    _ <- Async.waitAnyCatchCancel [ userSpace, brain ]
-    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete sId))
-    saOnDisconnect app
+    void $ Async.async $ do
+      _ <- Async.waitAnyCatchCancel [ userSpace, brain, heartbeat ]
+      STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete sId))
+      saOnDisconnect app
 
   let openMessage = OpenMessage { omSocketId = sId
                                 , omUpgrades = [ Websocket ]
-                                , omPingTimeout = 60000
+                                , omPingTimeout = pingTimeout * 1000
                                 , omPingInterval = 25000
                                 }
 
@@ -506,6 +507,9 @@ freshSession eio socketHandler api supportsBinary = do
 
   writeBytes api (encodePayload supportsBinary payload)
 
+  where
+
+  pingTimeout = 60
 
 --------------------------------------------------------------------------------
 upgrade :: MonadIO m => ServerAPI m -> Socket -> m ()

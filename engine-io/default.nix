@@ -1,6 +1,6 @@
 { cabal, aeson, async, attoparsec, base64Bytestring, monadLoops
 , mwcRandom, stm, text, transformers, unorderedContainers, vector
-, websockets, either
+, websockets, either, stmDelay
 }:
 
 cabal.mkDerivation (self: {
@@ -10,6 +10,7 @@ cabal.mkDerivation (self: {
   buildDepends = [
     aeson async attoparsec base64Bytestring monadLoops mwcRandom stm
     text transformers unorderedContainers vector websockets either
+    stmDelay
   ];
   meta = {
     homepage = "http://github.com/ocharles/engine.io";
