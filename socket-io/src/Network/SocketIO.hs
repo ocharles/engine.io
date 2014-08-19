@@ -240,9 +240,9 @@ onJSON eventName handler =
 
 
 --------------------------------------------------------------------------------
--- | When an event with a given name is received, and its arguments can be
+-- | When an event with a given name is received, and its argument can be
 -- decoded by a 'Aeson.FromJSON' instance, run the associated function
--- after decoding the event arguments.
+-- after decoding the event argument. Expects exactly one event argument.
 on
   :: (MonadState RoutingTable m, Aeson.FromJSON arg, Applicative m)
   => Text.Text

@@ -1,5 +1,6 @@
 name: engine-io-snap
 version: 1.0.1
+homepage: http://github.com/ocharles/engine.io
 license: BSD3
 license-file: LICENSE
 author: Oliver Charles

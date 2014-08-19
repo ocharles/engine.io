@@ -12,8 +12,10 @@ cabal-version: >=1.10
 Data-Dir: resources
 Data-files:
   index.html
+  main.js
+  style.css
 
-Executable chat
+Executable chat-snap
   default-language: Haskell2010
   build-depends:
     aeson,
@@ -26,6 +28,23 @@ Executable chat
     stm,
     text,
     transformers
-  main-is: Main.hs
+  main-is: MainSnap.hs
   other-modules: Paths_chat
+  ghc-options: -Wall -O2
+
+Executable chat-yesod
+  default-language: Haskell2010
+  build-depends:
+    aeson,
+    base,
+    engine-io,
+    yesod-core,
+    yesod-static,
+    engine-io-yesod,
+    socket-io,
+    stm,
+    text,
+    transformers,
+    template-haskell
+  main-is: MainYesod.hs
   ghc-options: -Wall -O2

@@ -1,27 +1,20 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Main where
+
+module Chat (server, ServerState (..)) where
 
 import Prelude hiding (mapM_)
 
-import Control.Applicative
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.State (StateT)
+import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=))
 import Data.Foldable (mapM_)
 
+import Control.Applicative
 import qualified Control.Concurrent.STM as STM
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
-import qualified Network.EngineIO.Snap as EIOSnap
 import qualified Network.SocketIO as SocketIO
-import qualified Snap.Core as Snap
-import qualified Snap.Util.FileServe as Snap
-import qualified Snap.Http.Server as Snap
 
-import Paths_chat (getDataDir)
 
---------------------------------------------------------------------------------
 data AddUser = AddUser Text.Text
 
 instance Aeson.FromJSON AddUser where
@@ -92,15 +85,3 @@ server state = do
   SocketIO.on_ "stop typing" $
     forUserName $ \userName ->
       SocketIO.broadcast "stop typing" (UserName userName)
-
-
---------------------------------------------------------------------------------
-main :: IO ()
-main = do
-  state <- ServerState <$> STM.newTVarIO 0
-  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (server state)
-  dataDir <- getDataDir
-  Snap.quickHttpServe $
-    Snap.route [ ("/socket.io", socketIoHandler)
-               , ("/", Snap.serveDirectory dataDir)
-               ]

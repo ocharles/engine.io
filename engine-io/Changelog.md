@@ -1,3 +1,8 @@
+## HEAD
+
+* Long-polling connections now emit a `ping` message after 45 seconds, if no
+  data is written to them.
+
 ## 1.1.0
 
 * The `ServerAPI` functions `srvWriteBuilder`, `srvSetContentType` and

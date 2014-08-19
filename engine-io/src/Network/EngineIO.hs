@@ -593,7 +593,8 @@ handlePoll api@ServerAPI{..} transport supportsBinary = do
     let out = transOut transport
 
     -- Here we attempt to read as much from the transport output as we can.
-    -- We add a timeout alternative to
+    -- We also consider the timeout above, such that if we haven't even read
+    -- one message by the timeout is reached, we instead emit a `ping`.
     packets <- liftIO $ do
       p <- STM.atomically $ do
         let dequeueHead = Just <$> STM.readTChan out
