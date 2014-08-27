@@ -1,7 +1,10 @@
-## HEAD
+## 1.1.1
 
 * Long-polling connections now emit a `ping` message after 45 seconds, if no
   data is written to them.
+
+* There is a new `dupRawReader` function, which lets you create a read-only
+  stream of raw communication with a socket.
 
 ## 1.1.0
 

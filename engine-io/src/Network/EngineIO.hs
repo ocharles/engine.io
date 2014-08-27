@@ -22,6 +22,7 @@ module Network.EngineIO
   , SocketId
   , socketId
   , getOpenSockets
+  , dupRawReader
 
     -- * The Engine.IO Protocol
     -- This section of the API is somewhat low-level, and exposes the raw
@@ -293,6 +294,7 @@ data Socket = Socket
   , socketTransport :: STM.TVar Transport
   , socketIncomingMessages :: STM.TChan PacketContent
   , socketOutgoingMessages :: STM.TChan PacketContent
+  , socketRawIncomingBroadcast :: STM.TChan Packet
   }
 
 instance Eq Socket where
@@ -457,6 +459,7 @@ freshSession eio socketHandler api supportsBinary = do
                    STM.newTVarIO transport)
            <*> STM.newTChanIO
            <*> STM.newTChanIO
+           <*> STM.newBroadcastTChanIO
 
   liftIO $ STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert sId socket))
 
@@ -478,6 +481,7 @@ freshSession eio socketHandler api supportsBinary = do
                _ ->
                  return ()
 
+             STM.writeTChan (socketRawIncomingBroadcast socket) req
              return (Just req)
 
         , do STM.readTChan (socketOutgoingMessages socket)
@@ -666,6 +670,21 @@ serveError ServerAPI{..} e = srvTerminateWithResponse 400 "application/json" $
                    TransportUnknown -> "Transport unknown"
                    SessionIdUnknown -> "Session ID unknown"
                    BadRequest -> "Bad request"
+
+
+--------------------------------------------------------------------------------
+-- | Create a new 'IO' action to read the socket's raw incoming communications.
+-- The result of this call is iteslf an STM action, which will called will return
+-- the next unread incoming packet (or block). This provides you with a separate
+-- channel to monitor incoming communications. This may useful to monitor to
+-- determine if the socket has activity.
+--
+-- This is a fairly low level operation, so you will receive *all* packets -
+-- including pings and other control codes.
+dupRawReader :: Socket -> IO (STM.STM Packet)
+dupRawReader s = do
+  c <- STM.atomically (STM.dupTChan (socketRawIncomingBroadcast s))
+  return (STM.readTChan c)
 
 
 {- $intro
