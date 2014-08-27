@@ -159,7 +159,7 @@ convenience 'on' family of functions.
 initialize
   :: MonadIO m
   => EIO.ServerAPI m
-  -> StateT RoutingTable m a
+  -> StateT RoutingTable (ReaderT Socket m) a
   -> IO (m ())
 initialize api socketHandler = do
   eio <- EIO.initialize
@@ -167,7 +167,8 @@ initialize api socketHandler = do
   let
     eioHandler socket = do
       let wrappedSocket = Socket socket eio
-      routingTable <- execStateT socketHandler (RoutingTable mempty (const (return ())))
+      routingTable <- flip runReaderT wrappedSocket $
+        execStateT socketHandler (RoutingTable mempty (const (return ())))
 
       return $ EIO.SocketApp
         { EIO.saApp = flip runReaderT wrappedSocket $ do

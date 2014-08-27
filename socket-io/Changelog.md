@@ -1,3 +1,7 @@
+## 1.1.0
+
+* When building an initial routing table, you now have access to the `Socket`.
+
 ## 1.0.1
 
 * Increase upper-bound of engine-io to <1.2
