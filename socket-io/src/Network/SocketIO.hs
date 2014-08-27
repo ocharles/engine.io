@@ -28,6 +28,7 @@ module Network.SocketIO
     -- * Sockets
   , Socket
   , socketId
+  , engineIOSocket
 
   -- * Protocol Types
   -- ** Packet Types
@@ -212,6 +213,12 @@ instance Ord Socket where
 socketId :: Socket -> EIO.SocketId
 socketId = EIO.socketId . socketEIOSocket
 
+-- | Retrieve the Engine.IO 'EIO.Socket' that underlies this Socket.IO socket.
+-- This is a fairly low-level operation - you should take care when reading or
+-- writing directly to this socket, as it is possible to break invariants that
+-- Socket.io is expecting.
+engineIOSocket :: Socket -> EIO.Socket
+engineIOSocket = socketEIOSocket
 
 --------------------------------------------------------------------------------
 -- | A per-connection routing table. This table determines what actions to

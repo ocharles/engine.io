@@ -2,6 +2,9 @@
 
 * When building an initial routing table, you now have access to the `Socket`.
 
+* `engineIOSocket` lets you access the underlying `engine-io` `Socket` for a
+  Socket.io session.
+
 ## 1.0.1
 
 * Increase upper-bound of engine-io to <1.2
