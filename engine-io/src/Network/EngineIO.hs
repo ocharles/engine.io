@@ -500,7 +500,7 @@ freshSession eio socketHandler api supportsBinary = do
     saOnDisconnect app
 
   let openMessage = OpenMessage { omSocketId = sId
-                                , omUpgrades = [ ]
+                                , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000
                                 }

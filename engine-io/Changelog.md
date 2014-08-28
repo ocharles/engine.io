@@ -1,3 +1,8 @@
+## 1.1.2
+
+* 1.1.1 accidently removed `websockets` from the list of available upgrades.
+  This release reverts that change.
+
 ## 1.1.1
 
 * Long-polling connections now emit a `ping` message after 45 seconds, if no
