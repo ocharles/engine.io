@@ -1,4 +1,4 @@
-name: binary
+name: latency
 version: 1.0.0
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
@@ -13,7 +13,7 @@ Data-Dir: resources
 Data-files:
   index.html
 
-Executable binary
+Executable latency-example
   default-language: Haskell2010
   build-depends:
     base,
@@ -24,5 +24,5 @@ Executable binary
     stm,
     transformers
   main-is: Main.hs
-  other-modules: Paths_binary
+  other-modules: Paths_latency
   ghc-options: -Wall -O2 -threaded

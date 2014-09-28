@@ -12,7 +12,7 @@ import qualified Snap.Core as Snap
 import qualified Snap.Util.FileServe as Snap
 import qualified Snap.Http.Server as Snap
 
-import Paths_binary
+import Paths_latency
 
 --------------------------------------------------------------------------------
 handler :: Monad m => EIO.Socket -> m EIO.SocketApp
