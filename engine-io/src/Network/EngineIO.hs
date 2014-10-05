@@ -331,7 +331,7 @@ data ServerAPI m = ServerAPI
     -- should also terminate the web request entirely, such that further actions
     -- in @m@ have no effect.
 
-  , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m a
+  , srvParseRequestBody :: forall a. Attoparsec.Parser a -> m (Either String a)
     -- ^ Run a 'Attoparsec.Parser' against the request body.
 
   , srvGetRequestMethod :: m BS.ByteString
@@ -340,7 +340,6 @@ data ServerAPI m = ServerAPI
 
   , srvRunWebSocket :: WebSockets.ServerApp -> m ()
     -- ^ Upgrade the current connection to run a WebSocket action.
-
   }
 
 
@@ -616,8 +615,14 @@ handlePoll api@ServerAPI{..} transport supportsBinary = do
     writeBytes api (encodePayload supportsBinary (Payload (V.fromList packets)))
 
   post = do
-    Payload packets <- srvParseRequestBody parsePayload
-    liftIO $ STM.atomically (V.mapM_ (STM.writeTChan (transIn transport)) packets)
+    p <- srvParseRequestBody parsePayload
+    case p of
+      Left ex -> do
+        liftIO $ putStrLn $ "WARNING: Parse failure in Network.EngineIO.handlePoll: " ++ show ex
+        srvTerminateWithResponse 400 "text/plain" "Empty request body"
+
+      Right (Payload packets) ->
+        liftIO $ STM.atomically (V.mapM_ (STM.writeTChan (transIn transport)) packets)
 
 
 --------------------------------------------------------------------------------

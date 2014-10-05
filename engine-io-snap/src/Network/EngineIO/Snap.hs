@@ -3,6 +3,7 @@ module Network.EngineIO.Snap (snapAPI) where
 
 import Control.Applicative
 
+import qualified Control.Monad.CatchIO as MonadCatchIO
 import qualified Data.Attoparsec.Enumerator as Attoparsec
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.HashMap.Strict as HashMap
@@ -25,7 +26,10 @@ snapAPI = EIO.ServerAPI
       LMap.foldlWithKey' (\m k v -> HashMap.insert k v m) HashMap.empty
         <$> Snap.getQueryParams
 
-  , EIO.srvParseRequestBody = Snap.runRequestBody . Attoparsec.iterParser
+  , EIO.srvParseRequestBody =
+      fmap (either (\e@Attoparsec.ParseError{} -> Left (show e))
+                   Right) .
+      MonadCatchIO.try . Snap.runRequestBody . Attoparsec.iterParser
 
   , EIO.srvGetRequestMethod = do
       m <- Snap.getsRequest Snap.rqMethod

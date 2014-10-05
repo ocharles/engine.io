@@ -1,3 +1,7 @@
+## 1.1.1
+
+* Build with `engine-io` 1.2
+
 ## 1.1.0
 
 * When building an initial routing table, you now have access to the `Socket`.

@@ -1,3 +1,9 @@
+## 1.2.0
+
+* `ServerAPI`'s `srvParseParseRequestBody` has changed its return type to
+  `Either String a`. This allows API providers to catch exceptions that may
+  happen when attempting to perform this parse.
+
 ## 1.1.2
 
 * 1.1.1 accidently removed `websockets` from the list of available upgrades.
