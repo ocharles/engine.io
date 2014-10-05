@@ -26,4 +26,4 @@ Executable binary-example
     text,
     transformers
 
-  ghc-options: -Wall -O2
+  ghc-options: -Wall -O2 -threaded
