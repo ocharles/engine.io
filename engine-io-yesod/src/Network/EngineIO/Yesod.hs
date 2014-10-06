@@ -34,11 +34,9 @@ yesodAPI = EIO.ServerAPI
   , EIO.srvGetQueryParams = HashMap.fromListWith (++) . map (second maybeToList)
                               . WAI.queryString <$> YC.waiRequest
 
-  , EIO.srvParseRequestBody = \p -> do
-      val <- YC.rawRequestBody $$ runCatchC (sinkParser p)
-      case val of
-        Left e  -> YC.invalidArgs ["could not parse request body: " `mappend` pack (show e)]
-        Right v -> return v
+  , EIO.srvParseRequestBody = \p ->
+      fmap (either (Left . show) Right) $
+        YC.rawRequestBody $$ runCatchC (sinkParser p)
 
   , EIO.srvGetRequestMethod = WAI.requestMethod <$> YC.waiRequest
 
