@@ -3,12 +3,10 @@ engine.io
 
 This repository contains the following projects:
 
-* [`engine-io`](./engine-io) contains a Haskell implementation of [Engine.IO](http://github.com/automattic/engine.io), a real-time abstraction for the web, allowing one to interact with clients in a socket-like fashion (rather than the more traditional request-response pattern). Supports long-polling along with upgrading to WebSockets. This library is API agnostic - you need to connect it your web server by providing a `ServerAPI` object.
-
-* [`engine-io-snap`](./engine-io-snap) provides a `ServerAPI` that can be used to run an Engine.IO application in [Snap](http://snapframework.com).
-
-* [`engine-io-yesod`](./engine-io-yesod) provides a `ServerAPI` that can be used to run an Engine.IO application in [Yesod](http://www.yesodweb.com/).
-
-* [`socket-io`](./socket-io) implements the [Socket.IO](http://socket.io) protocol on top of `engine-io`. Socket.IO is a higher-level abstraction based on events. Clients send events to the server, which can respond by sending events back to clients, or broadcasting events to all other clients.
-
-* [`examples`](./examples) contains an example `engine-io` application (a latency test) and a chat server application written using `socket-io`.
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Project&nbsp;Version&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Description |
+| --- | --- |
+| [![Hackage version](https://img.shields.io/hackage/v/engine-io.svg?style=flat)](http://hackage.haskell.org/package/engine-io) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/engine-io.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=engine-io) | [`engine-io`](./engine-io) contains a Haskell implementation of [Engine.IO](http://github.com/automattic/engine.io), a real-time abstraction for the web, allowing one to interact with clients in a socket-like fashion (rather than the more traditional request-response pattern). Supports long-polling along with upgrading to WebSockets. This library is API agnostic - you need to connect it your web server by providing a `ServerAPI` object. |
+| [![Hackage version](https://img.shields.io/hackage/v/engine-io-snap.svg?style=flat)](http://hackage.haskell.org/package/engine-io-snap) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/engine-io-snap.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=engine-io-snap) | [`engine-io-snap`](./engine-io-snap) provides a `ServerAPI` that can be used to run an Engine.IO application in [Snap](http://snapframework.com). |
+| [![Hackage version](https://img.shields.io/hackage/v/engine-io-yesod.svg?style=flat)](http://hackage.haskell.org/package/engine-io-yesod) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/engine-io-yesod.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=engine-io-yesod) | [`engine-io-yesod`](./engine-io-yesod) provides a `ServerAPI` that can be used to run an Engine.IO application in [Yesod](http://www.yesodweb.com/). |
+| [![Hackage version](https://img.shields.io/hackage/v/socket-io.svg?style=flat)](http://hackage.haskell.org/package/socket-io) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/socket-io.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=socket-io) | [`socket-io`](./socket-io) implements the [Socket.IO](http://socket.io) protocol on top of `engine-io`. Socket.IO is a higher-level abstraction based on events. Clients send events to the server, which can respond by sending events back to clients, or broadcasting events to all other clients. |
+| | [`examples`](./examples) contains an example `engine-io` application (a latency test) and a chat server application written using `socket-io`. |
