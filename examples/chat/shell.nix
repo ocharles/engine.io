@@ -5,6 +5,7 @@ let
       engineIo = self.callPackage ../../engine-io {};
       socketIo = self.callPackage ../../socket-io {};
       engineIoSnap = self.callPackage ../../engine-io-snap {};
+      engineIoYesod = self.callPackage ../../engine-io-yesod {};
       example = self.callPackage ./. {};
     };
   };

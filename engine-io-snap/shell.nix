@@ -8,6 +8,13 @@ let
     };
   };
 
-in pkgs.lib.overrideDerivation haskellPackages.engineIoSnap (attrs: {
-     buildInputs = [ haskellPackages.cabalInstall_1_18_0_3 ] ++ attrs.buildInputs;
-   })
+in pkgs.myEnvFun {
+     name = haskellPackages.engineIoSnap.name;
+     buildInputs = [
+       pkgs.curl
+       (haskellPackages.ghcWithPackages (hs: ([
+         hs.cabalInstall
+         hs.hscolour
+       ] ++ hs.engineIoSnap.propagatedNativeBuildInputs)))
+     ];
+   }
