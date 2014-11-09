@@ -17,7 +17,7 @@ import Paths_chat (getDataDir)
 main :: IO ()
 main = do
   state <- ServerState <$> STM.newTVarIO 0
-  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (server state)
+  socketIoHandler <- SocketIO.initialize EIOSnap.snapAPI (server state :: SocketIO.SocketHandler Snap.Snap ())
   dataDir <- getDataDir
   Snap.quickHttpServe $
     Snap.route [ ("/socket.io", socketIoHandler)

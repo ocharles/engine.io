@@ -59,7 +59,7 @@ instance Aeson.ToJSON UserJoined where
 --------------------------------------------------------------------------------
 data ServerState = ServerState { ssNConnected :: STM.TVar Int }
 
---server :: ServerState -> StateT SocketIO.RoutingTable Snap.Snap ()
+--server :: (Functor m, Monad m, MonadIO m) => ServerState -> SocketIO.SocketHandler m ()
 server state = do
   userNameMVar <- liftIO STM.newEmptyTMVarIO
   let forUserName m = liftIO (STM.atomically (STM.tryReadTMVar userNameMVar)) >>= mapM_ m
