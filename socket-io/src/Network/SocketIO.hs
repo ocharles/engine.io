@@ -186,7 +186,7 @@ initialize api socketHandler = do
     eioHandler socket = do
       let wrappedSocket = Socket socket eio
       routingTable <- flip runReaderT wrappedSocket $
-        execStateT socketHandler (RoutingTable mempty (const (return ())))
+        execStateT socketHandler (RoutingTable mempty (return ()))
       
       runAppInIO <- socketAppToIO
       
@@ -210,7 +210,7 @@ initialize api socketHandler = do
 
                 Left e -> error $ "Attoparsec failed: " ++ show e
 
-        , EIO.saOnDisconnect = runAppInIO $ rtDisconnect routingTable (socketId wrappedSocket)
+        , EIO.saOnDisconnect = runAppInIO $ flip runReaderT wrappedSocket $ rtDisconnect routingTable
         }
 
   return (EIO.handler eio eioHandler api)
@@ -244,7 +244,7 @@ engineIOSocket = socketEIOSocket
 -- invoke when events are received.
 data RoutingTableT m = RoutingTable
   { rtEvents :: HashMap.HashMap Text.Text (Aeson.Array -> MaybeT (EventHandlerT m) ())
-  , rtDisconnect :: EIO.SocketId -> m ()
+  , rtDisconnect :: EventHandlerT m ()
   }
 
 type RoutingTable = RoutingTableT IO
@@ -317,10 +317,10 @@ on_ eventName handler =
 -- previously register disconnect handlers.
 appendDisconnectHandler
   :: (MonadState (RoutingTableT m') m, Monad m')
-  => (EIO.SocketId -> m' ()) -> m ()
+  => EventHandlerT m' () -> m ()
 appendDisconnectHandler handler = modify $ \rt -> rt
-  { rtDisconnect = \sId -> do rtDisconnect rt sId
-                              handler sId
+  { rtDisconnect = do rtDisconnect rt
+                      handler
   }
 
 --------------------------------------------------------------------------------
