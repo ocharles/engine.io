@@ -53,6 +53,7 @@ import Control.Applicative
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (SomeException(SomeException), try)
 import Control.Monad (MonadPlus, forever, guard, mzero, replicateM)
+import Control.Monad.Trans.Iter (cutoff, delay, retract)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
 import Control.Monad.Trans.Class (lift)
@@ -448,19 +449,29 @@ freshSession
   -> Bool
   -> m ()
 freshSession eio socketHandler api supportsBinary = do
-  sId <- liftIO (newSocketId eio)
+  socket <- do
+    mkSocket <- liftIO $ do
+      transport <- STM.newTVarIO =<< (Transport <$> STM.newTChanIO <*> STM.newTChanIO <*> pure Polling)
+      incoming <- STM.newTChanIO
+      outgoing <- STM.newTChanIO
+      rawInBroadcast <- STM.newBroadcastTChanIO
+      return (\sId -> Socket sId transport incoming outgoing rawInBroadcast)
 
-  socket <- liftIO $
-    Socket <$> pure sId
-           <*> (do transport <- Transport <$> STM.newTChanIO
-                                          <*> STM.newTChanIO
-                                          <*> pure Polling
-                   STM.newTVarIO transport)
-           <*> STM.newTChanIO
-           <*> STM.newTChanIO
-           <*> STM.newBroadcastTChanIO
+    let
+      tryAllocation = liftIO $ do
+        sId <- newSocketId eio
+        STM.atomically $ runMaybeT $ do
+          openSessions <- lift (STM.readTVar (eioOpenSessions eio))
+          guard (not (HashMap.member sId openSessions))
+          let socket = mkSocket sId
+          lift (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert sId socket))
+          return socket
 
-  liftIO $ STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.insert sId socket))
+      untilSuccess f = maybe (delay (untilSuccess f)) return =<< f
+
+    maybeSocket <- retract (cutoff 10 (untilSuccess tryAllocation))
+    maybe (srvTerminateWithResponse api 500 "text/plain" "Session allocation failed")
+          return maybeSocket
 
   app <- socketHandler socket
   userSpace <- liftIO $ Async.async (saApp app)
@@ -495,10 +506,10 @@ freshSession eio socketHandler api supportsBinary = do
 
   _ <- liftIO $ Async.async $ do
     _ <- Async.waitAnyCatchCancel [ userSpace, brain ]
-    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete sId))
+    STM.atomically (STM.modifyTVar' (eioOpenSessions eio) (HashMap.delete (socketId socket)))
     saOnDisconnect app
 
-  let openMessage = OpenMessage { omSocketId = sId
+  let openMessage = OpenMessage { omSocketId = socketId socket
                                 , omUpgrades = [ Websocket ]
                                 , omPingTimeout = 60000
                                 , omPingInterval = 25000

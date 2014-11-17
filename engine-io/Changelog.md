@@ -1,3 +1,8 @@
+## 1.2.1
+
+* Fixed a potential race condition in session allocation, where we could
+  clobber existing session ids.
+
 ## 1.2.0
 
 * `ServerAPI`'s `srvParseParseRequestBody` has changed its return type to
