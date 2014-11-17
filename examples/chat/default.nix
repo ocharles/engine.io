@@ -1,4 +1,4 @@
-{ cabal, aeson, engineIo, engineIoSnap, engineIoYesod, snapServer, snapCORS
+{ cabal, aeson, engineIo, engineIoSnap, engineIoYesod, snapServer, snapCors
 , socketIo, stm, text, yesodStatic
 }:
 
@@ -7,7 +7,7 @@ cabal.mkDerivation (self: {
   version = "1.0.0";
   src = ./.;
   buildDepends = [
-    aeson engineIo engineIoSnap engineIoYesod snapCORS snapServer socketIo text
+    aeson engineIo engineIoSnap engineIoYesod snapCors snapServer socketIo text
     yesodStatic
   ];
   meta = {
