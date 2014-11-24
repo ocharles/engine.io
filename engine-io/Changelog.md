@@ -1,3 +1,9 @@
+## 1.2.2
+
+* We now use `stm-delay` to implement a timeout, if we don't *receive*
+  network traffic from the client. Under normal operation, the Socket.io
+  client should ping the server, so an idle session should remain alive.
+
 ## 1.2.1
 
 * Fixed a potential race condition in session allocation, where we could
