@@ -1,3 +1,12 @@
+## 1.2.0
+
+* Change `appendDisconnectHandler` to work in the `EventHandler` monad. This
+  allows you to broadcast messages to other clients when a socket disconnects.
+  The chat example has been updated to broadcast a "user left" message to
+  demonstrate this.
+
+  Thanks to Kayo Phoenix (@katyo) for the majority of this work!
+
 ## 1.1.1
 
 * Build with `engine-io` 1.2

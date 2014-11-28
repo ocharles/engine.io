@@ -78,6 +78,18 @@ server state = do
     SocketIO.emit "login" (NumConnected n)
     SocketIO.broadcast "user joined" (UserJoined userName n)
 
+  SocketIO.appendDisconnectHandler $ do
+    (n, mUserName) <- liftIO $ STM.atomically $ do
+      n <- (+ (-1)) <$> STM.readTVar (ssNConnected state)
+      mUserName <- STM.tryReadTMVar userNameMVar
+      STM.writeTVar (ssNConnected state) n
+      return (n, mUserName)
+
+    case mUserName of
+      Nothing -> return ()
+      Just userName ->
+        SocketIO.broadcast "user left" (UserJoined userName n)
+
   SocketIO.on_ "typing" $
     forUserName $ \userName ->
       SocketIO.broadcast "typing" (UserName userName)
