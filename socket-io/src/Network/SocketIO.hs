@@ -1,5 +1,9 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Network.SocketIO
   ( -- $intro
     -- * Running Socket.IO Applications
@@ -246,30 +250,39 @@ onJSON eventName handler =
                            (rtEvents rt)
     }
 
+--------------------------------------------------------------------------------
+class OnArgs a r | a -> r where
+  parseArgs :: Aeson.Array -> a -> Maybe r
+
+instance OnArgs a a where
+  parseArgs v m
+    | V.null v = Just m
+    | otherwise = Nothing
+
+instance (Aeson.FromJSON a, OnArgs b r) => OnArgs (a -> b) r where
+  parseArgs v f
+    | V.null v = Nothing
+    | otherwise = case Aeson.fromJSON (V.head v) of
+                    Aeson.Success s -> parseArgs (V.tail v) (f s)
+                    Aeson.Error _ -> Nothing
 
 --------------------------------------------------------------------------------
 -- | When an event with a given name is received, and its argument can be
 -- decoded by a 'Aeson.FromJSON' instance, run the associated function
 -- after decoding the event argument. Expects exactly one event argument.
 on
-  :: (MonadState RoutingTable m, Aeson.FromJSON arg, Applicative m)
-  => Text.Text
-  -> (arg -> EventHandler a)
-  -> m ()
+  :: (MonadState RoutingTable m, OnArgs f (EventHandler a), Applicative m)
+  => Text.Text -> f -> m ()
 on eventName handler =
-  let eventHandler v = do
-        [x] <- return (V.toList v)
-        case Aeson.fromJSON x of
-          Aeson.Success s -> lift (handler s)
-          Aeson.Error _ -> mzero
-
-  in modify $ \rt -> rt
-       { rtEvents =
-           HashMap.insertWith (\new old json -> old json <|> new json)
-                              eventName
-                              (void . eventHandler)
-                              (rtEvents rt)
-       }
+  let eventHandler v =
+        maybe mzero lift (parseArgs v handler)
+  in modify $
+     \rt ->
+       rt {rtEvents =
+             HashMap.insertWith (\new old json -> old json <|> new json)
+                                eventName
+                                (void . eventHandler)
+                                (rtEvents rt)}
 
 
 --------------------------------------------------------------------------------
@@ -280,16 +293,8 @@ on_
   => Text.Text
   -> EventHandler a
   -> m ()
-on_ eventName handler =
-  let eventHandler v = guard (V.null v) >> lift handler
-
-  in modify $ \rt -> rt
-       { rtEvents =
-           HashMap.insertWith (\new old json -> old json <|> new json)
-                              eventName
-                              (void . eventHandler)
-                              (rtEvents rt)
-       }
+on_ e f = on e (void f)
+{-# DEPRECATED on_ "Use Network.SocketIO.on instead" #-}
 
 
 --------------------------------------------------------------------------------
