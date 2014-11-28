@@ -595,7 +595,7 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
 
   sendPacket conn (Packet t (TextPacket text)) =
     WebSockets.sendTextData conn $
-      Text.encodeUtf8 $ Text.pack $ BSChar8.unpack $ Text.encodeUtf8 $
+      Text.encodeUtf8 $
         Text.pack (pure $ intToDigit (packetTypeToIndex t)) <> text
 
   sendPacket conn p@(Packet _ (BinaryPacket _)) = do

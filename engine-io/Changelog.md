@@ -1,3 +1,9 @@
+## 1.2.3
+
+* Revert double-encoding introduced in 1.0.1. This now requires that you
+  use a modern version of the `socket.io` client library. This work was
+  tested against `socket.io-1.2.1.js`.
+
 ## 1.2.2
 
 * We now use `stm-delay` to implement a timeout, if we don't *receive*
