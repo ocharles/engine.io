@@ -46,5 +46,5 @@ handleSocketIOR = YC.getYesod >>= socketIoHandler
 main :: IO ()
 main = do
   state <- ServerState <$> STM.newTVarIO 0
-  app <- YesodChat <$> SocketIO.initialize EIOYesod.yesodAPI (server state)
+  app <- YesodChat <$> SocketIO.initialize EIOYesod.yesodAPI (server state :: SocketIO.SocketHandler Handler ())
   YC.warp 8000 app

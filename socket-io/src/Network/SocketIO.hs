@@ -1,11 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Network.SocketIO
   ( -- $intro
     -- * Running Socket.IO Applications
-    initialize
-
+    SocketAppToIO(..)
+  , initialize
+  
     -- * Receiving events
+  , RoutingTableT
   , RoutingTable
   , on
   , on_
@@ -13,7 +17,12 @@ module Network.SocketIO
   , appendDisconnectHandler
 
   -- * Emitting Events
+  , EventHandlerT
   , EventHandler
+  
+  -- * Provide Handler
+  , SocketHandlerT
+  , SocketHandler
 
   -- ** To One Client
   , emit
@@ -135,10 +144,18 @@ encodePacket :: Packet -> Builder.Builder
 encodePacket (Packet pt attachments n pId json) =
   encodePacketType pt <> fromMaybe mempty (Builder.lazyByteString . Aeson.encode <$> json)
 
+class SocketAppToIO m m' where
+  socketAppToIO :: m (m' a -> IO a)
+
+instance (Monad m) => SocketAppToIO m IO where
+  socketAppToIO = return id
 
 --------------------------------------------------------------------------------
-type EventHandler a = ReaderT Socket IO a
+type EventHandlerT m' = ReaderT Socket m'
+type EventHandler = EventHandlerT IO
 
+type SocketHandlerT m m' = StateT (RoutingTableT m') (EventHandlerT m)
+type SocketHandler m = SocketHandlerT m IO
 
 --------------------------------------------------------------------------------
 {-|
@@ -158,9 +175,9 @@ convenience 'on' family of functions.
 
 -}
 initialize
-  :: MonadIO m
+  :: (Functor m, MonadIO m, Functor m', MonadIO m', SocketAppToIO m m')
   => EIO.ServerAPI m
-  -> StateT RoutingTable (ReaderT Socket m) a
+  -> SocketHandlerT m m' a
   -> IO (m ())
 initialize api socketHandler = do
   eio <- EIO.initialize
@@ -169,12 +186,14 @@ initialize api socketHandler = do
     eioHandler socket = do
       let wrappedSocket = Socket socket eio
       routingTable <- flip runReaderT wrappedSocket $
-        execStateT socketHandler (RoutingTable mempty (const (return ())))
-
+        execStateT socketHandler (RoutingTable mempty (return ()))
+      
+      runAppInIO <- socketAppToIO
+      
       return $ EIO.SocketApp
-        { EIO.saApp = flip runReaderT wrappedSocket $ do
+        { EIO.saApp = runAppInIO $ flip runReaderT wrappedSocket $ do
             emitPacketTo wrappedSocket (Packet Connect Nothing "/" Nothing Nothing)
-
+            
             forever $ do
               EIO.TextPacket t <- liftIO (STM.atomically (EIO.receive socket))
               case Attoparsec.parseOnly parsePacket (Text.encodeUtf8 t) of
@@ -191,7 +210,7 @@ initialize api socketHandler = do
 
                 Left e -> error $ "Attoparsec failed: " ++ show e
 
-        , EIO.saOnDisconnect = rtDisconnect routingTable (socketId wrappedSocket)
+        , EIO.saOnDisconnect = runAppInIO $ flip runReaderT wrappedSocket $ rtDisconnect routingTable
         }
 
   return (EIO.handler eio eioHandler api)
@@ -223,19 +242,20 @@ engineIOSocket = socketEIOSocket
 --------------------------------------------------------------------------------
 -- | A per-connection routing table. This table determines what actions to
 -- invoke when events are received.
-data RoutingTable = RoutingTable
-  { rtEvents :: HashMap.HashMap Text.Text (Aeson.Array -> MaybeT (ReaderT Socket IO) ())
-  , rtDisconnect :: EIO.SocketId -> IO ()
+data RoutingTableT m = RoutingTable
+  { rtEvents :: HashMap.HashMap Text.Text (Aeson.Array -> MaybeT (EventHandlerT m) ())
+  , rtDisconnect :: EventHandlerT m ()
   }
 
+type RoutingTable = RoutingTableT IO
 
 --------------------------------------------------------------------------------
 -- | When an event with a given name is received, call the associated function
 -- with the array of JSON arguments.
 onJSON
-  :: (MonadState RoutingTable m, Applicative m)
+  :: (MonadState (RoutingTableT m') m, Applicative m, Functor m', Monad m')
   => Text.Text
-  -> (Aeson.Array -> EventHandler a)
+  -> (Aeson.Array -> EventHandlerT m' a)
   -> m ()
 onJSON eventName handler =
   modify $ \rt -> rt
@@ -252,9 +272,9 @@ onJSON eventName handler =
 -- decoded by a 'Aeson.FromJSON' instance, run the associated function
 -- after decoding the event argument. Expects exactly one event argument.
 on
-  :: (MonadState RoutingTable m, Aeson.FromJSON arg, Applicative m)
+  :: (MonadState (RoutingTableT m') m, Aeson.FromJSON arg, Applicative m, Functor m', Monad m')
   => Text.Text
-  -> (arg -> EventHandler a)
+  -> (arg -> EventHandlerT m' a)
   -> m ()
 on eventName handler =
   let eventHandler v = do
@@ -276,9 +296,9 @@ on eventName handler =
 -- | When an event is received with a given name and no arguments, run the
 -- associated 'EventHandler'.
 on_
-  :: (MonadState RoutingTable m, Applicative m)
+  :: (MonadState (RoutingTableT m') m, Applicative m, Functor m', Monad m')
   => Text.Text
-  -> EventHandler a
+  -> EventHandlerT m' a
   -> m ()
 on_ eventName handler =
   let eventHandler v = guard (V.null v) >> lift handler
@@ -296,10 +316,11 @@ on_ eventName handler =
 -- | Run the given IO action when a client disconnects, along with any other
 -- previously register disconnect handlers.
 appendDisconnectHandler
-  :: MonadState RoutingTable m => (EIO.SocketId -> IO ()) -> m ()
+  :: (MonadState (RoutingTableT m') m, Monad m')
+  => EventHandlerT m' () -> m ()
 appendDisconnectHandler handler = modify $ \rt -> rt
-  { rtDisconnect = \sId -> do rtDisconnect rt sId
-                              handler sId
+  { rtDisconnect = do rtDisconnect rt
+                      handler
   }
 
 --------------------------------------------------------------------------------

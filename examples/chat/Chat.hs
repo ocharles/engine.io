@@ -59,7 +59,7 @@ instance Aeson.ToJSON UserJoined where
 --------------------------------------------------------------------------------
 data ServerState = ServerState { ssNConnected :: STM.TVar Int }
 
---server :: ServerState -> StateT SocketIO.RoutingTable Snap.Snap ()
+--server :: (Functor m, Monad m, MonadIO m) => ServerState -> SocketIO.SocketHandler m ()
 server state = do
   userNameMVar <- liftIO STM.newEmptyTMVarIO
   let forUserName m = liftIO (STM.atomically (STM.tryReadTMVar userNameMVar)) >>= mapM_ m
@@ -77,6 +77,18 @@ server state = do
 
     SocketIO.emit "login" (NumConnected n)
     SocketIO.broadcast "user joined" (UserJoined userName n)
+
+  SocketIO.appendDisconnectHandler $ do
+    (n, mUserName) <- liftIO $ STM.atomically $ do
+      n <- (+ (-1)) <$> STM.readTVar (ssNConnected state)
+      mUserName <- STM.tryReadTMVar userNameMVar
+      STM.writeTVar (ssNConnected state) n
+      return (n, mUserName)
+
+    case mUserName of
+     Nothing -> return ()
+     Just userName ->
+       SocketIO.broadcast "user left" (UserJoined userName n)
 
   SocketIO.on_ "typing" $
     forUserName $ \userName ->
