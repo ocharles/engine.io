@@ -1,3 +1,9 @@
+## 1.3.0
+
+* Change `on` to be variadic. `on` is now capable of parsing an arbitrary amount
+  of arguments from the event payload (0 or more). This API should change should
+  be backwards compatible with previous uses of `socket-io`, but allows more uses.
+
 ## 1.2.0
 
 * Change `appendDisconnectHandler` to work in the `EventHandler` monad. This
