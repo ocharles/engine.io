@@ -90,10 +90,10 @@ server state = do
       Just userName ->
         SocketIO.broadcast "user left" (UserJoined userName n)
 
-  SocketIO.on_ "typing" $
+  SocketIO.on "typing" $
     forUserName $ \userName ->
       SocketIO.broadcast "typing" (UserName userName)
 
-  SocketIO.on_ "stop typing" $
+  SocketIO.on "stop typing" $
     forUserName $ \userName ->
       SocketIO.broadcast "stop typing" (UserName userName)
