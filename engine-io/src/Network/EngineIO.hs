@@ -730,6 +730,7 @@ to the client, and run web socket applications. Hackage contains implementations
 of 'ServerAPI' as:
 
 * <http://hackage.haskell.org/package/engine-io-snap engine-io-snap> for Snap.
+* <http://hackage.haskell.org/package/engine-io-yesod engine-io-yesod> for Yesod.
 
 If you write your own implementation of 'ServerAPI', please share it on Hackage
 and I will link to it from here.
