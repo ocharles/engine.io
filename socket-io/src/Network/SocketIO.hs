@@ -237,7 +237,7 @@ data RoutingTable = RoutingTable
 -- | When an event with a given name is received, call the associated function
 -- with the array of JSON arguments.
 onJSON
-  :: (MonadState RoutingTable m, Applicative m)
+  :: (MonadState RoutingTable m)
   => Text.Text
   -> (Aeson.Array -> EventHandler a)
   -> m ()
@@ -271,7 +271,7 @@ instance (Aeson.FromJSON a, OnArgs b r) => OnArgs (a -> b) r where
 -- decoded by a 'Aeson.FromJSON' instance, run the associated function
 -- after decoding the event argument. Expects exactly one event argument.
 on
-  :: (MonadState RoutingTable m, OnArgs f (EventHandler a), Applicative m)
+  :: (MonadState RoutingTable m, OnArgs f (EventHandler a))
   => Text.Text -> f -> m ()
 on eventName handler =
   let eventHandler v =
@@ -289,7 +289,7 @@ on eventName handler =
 -- | When an event is received with a given name and no arguments, run the
 -- associated 'EventHandler'.
 on_
-  :: (MonadState RoutingTable m, Applicative m)
+  :: (MonadState RoutingTable m)
   => Text.Text
   -> EventHandler a
   -> m ()
