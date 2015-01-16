@@ -1,12 +1,8 @@
-let
-  pkgs = import <nixpkgs> {};
-  haskellPackages = pkgs.haskellPackages.override {
-    extension = self: super: {
-      engineIo = self.callPackage ../engine-io {};
-      socketIo = self.callPackage ./. {};
-    };
-  };
-
-in pkgs.lib.overrideDerivation haskellPackages.socketIo (attrs: {
-     buildInputs = [ haskellPackages.cabalInstall ] ++ attrs.buildInputs;
-   })
+with (import <nixpkgs> {}).pkgs;
+let modifiedHaskellPackages = haskellngPackages.override {
+        overrides = self: super: {
+                  engine-io = self.callPackage ../engine-io {};
+                          socket-io = self.callPackage ./. {};
+                                };
+                                    };
+                                    in modifiedHaskellPackages.socket-io.env

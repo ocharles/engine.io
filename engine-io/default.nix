@@ -1,21 +1,18 @@
-{ cabal, aeson, async, attoparsec, base64Bytestring, monadLoops
-, mwcRandom, stm, text, transformers, unorderedContainers, vector
-, websockets, either, stmDelay
+{ mkDerivation, aeson, async, attoparsec, base, base64-bytestring
+, bytestring, either, free, monad-loops, mwc-random, stdenv, stm
+, stm-delay, text, transformers, unordered-containers, vector
+, websockets
 }:
-
-cabal.mkDerivation (self: {
+mkDerivation {
   pname = "engine-io";
-  version = "1.0.0";
-  src = ./.;
+  version = "1.2.3";
+  sha256 = "05sc939x24f3na6nxywgbq0yx4wdamh6zk4spdclqgq65j7v0hxc";
   buildDepends = [
-    aeson async attoparsec base64Bytestring monadLoops mwcRandom stm
-    text transformers unorderedContainers vector websockets either
-    stmDelay
+    aeson async attoparsec base base64-bytestring bytestring either
+    free monad-loops mwc-random stm stm-delay text transformers
+    unordered-containers vector websockets
   ];
-  meta = {
-    homepage = "http://github.com/ocharles/engine.io";
-    description = "A Haskell implementation of Engine.IO";
-    license = self.stdenv.lib.licenses.bsd3;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  homepage = "http://github.com/ocharles/engine.io";
+  description = "A Haskell implementation of Engine.IO";
+  license = stdenv.lib.licenses.bsd3;
+}
