@@ -1,15 +1,16 @@
-{ cabal, engineIo, snapCore, websocketsSnap }:
-
-cabal.mkDerivation (self: {
+{ mkDerivation, attoparsec-enumerator, base, bytestring, containers
+, engine-io, MonadCatchIO-transformers, snap-core, stdenv
+, unordered-containers, websockets, websockets-snap
+}:
+mkDerivation {
   pname = "engine-io-snap";
-  version = "1.0.0";
+  version = "1.0.2";
   src = ./.;
   buildDepends = [
-    engineIo snapCore websocketsSnap
+    attoparsec-enumerator base bytestring containers engine-io
+    MonadCatchIO-transformers snap-core unordered-containers websockets
+    websockets-snap
   ];
-  meta = {
-    homepage = "http://github.com/ocharles/engine.io";
-    license = self.stdenv.lib.licenses.bsd3;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  homepage = "http://github.com/ocharles/engine.io";
+  license = stdenv.lib.licenses.bsd3;
+}
