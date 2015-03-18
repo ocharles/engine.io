@@ -50,9 +50,10 @@ module Network.EngineIO
 import Prelude hiding (any)
 
 import Control.Applicative
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception (SomeException(SomeException), try)
-import Control.Monad (MonadPlus, forever, guard, mzero, replicateM)
+import Control.Monad (MonadPlus, forever, guard, mzero, replicateM, when)
 import Control.Monad.Trans.Iter (cutoff, delay, retract)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
@@ -550,11 +551,24 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
 
       (wsIn, wsOut) <- liftIO $ STM.atomically $ do
         currentTransport <- STM.readTVar (socketTransport socket)
-        STM.writeTChan (transOut currentTransport) (Packet Noop (TextPacket Text.empty))
         return (transIn currentTransport, transOut currentTransport)
+
+      -- We wait 100ms to match the reference engine.io Javascript.
+      -- See automattic/engine.io socket.js revision d11e17c8.
+      check <-
+        liftIO
+          (Async.async
+            (do threadDelay 100000
+                STM.atomically
+                  (do t <- STM.readTVar (socketTransport socket)
+                      when (transType t == Polling)
+                           (STM.writeTChan (transOut t)
+                                           (Packet Noop (TextPacket Text.empty))))))
 
       Packet Upgrade body <- lift (receivePacket conn)
       guard (body == TextPacket Text.empty || body == BinaryPacket BS.empty)
+
+      liftIO (Async.cancel check)
 
       return (Transport wsIn wsOut Websocket)
 

@@ -6,7 +6,7 @@
 mkDerivation {
   pname = "engine-io";
   version = "1.2.3";
-  sha256 = "05sc939x24f3na6nxywgbq0yx4wdamh6zk4spdclqgq65j7v0hxc";
+  src = ./.;
   buildDepends = [
     aeson async attoparsec base base64-bytestring bytestring either
     free monad-loops mwc-random stm stm-delay text transformers

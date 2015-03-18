@@ -1,3 +1,11 @@
+## 1.2.4
+
+* Add a 100ms delay in the WebSocket upgrade process. This matches the
+  behavior of the reference engine.io implementation (in NodeJS), and
+  avoids a race condition on slower machines. Without this, it was
+  possible for the client to experience a up-to-45s delay before
+  upgrading.
+
 ## 1.2.3
 
 * Revert double-encoding introduced in 1.0.1. This now requires that you
