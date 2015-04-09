@@ -1,5 +1,5 @@
 name: engine-io
-version: 1.2.4
+version: 1.2.5
 synopsis: A Haskell implementation of Engine.IO
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
@@ -30,7 +30,7 @@ library
     aeson >=0.7 && <0.9,
     async >=2.0 && <2.1,
     attoparsec >=0.11 && <0.13,
-    base >=4.6 && <4.8,
+    base >=4.6 && <4.9,
     base64-bytestring >=1.0 && <1.1,
     bytestring >=0.10.2.0 && <0.11,
     either >= 3.4 && <4.4,

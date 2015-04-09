@@ -1,3 +1,8 @@
+## 1.2.5
+
+* Increased the upper-bound of base to allow < 4.9. Now builds on
+  GHC 7.10.1.
+
 ## 1.2.4
 
 * Add a 100ms delay in the WebSocket upgrade process. This matches the
