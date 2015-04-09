@@ -1,3 +1,8 @@
+## 1.3.1
+
+* Increased the upper-bound of base to allow < 4.9. Now builds on
+  GHC 7.10.1.
+
 ## 1.3.0
 
 * Change `on` to be variadic. `on` is now capable of parsing an arbitrary amount
