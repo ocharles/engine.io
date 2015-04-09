@@ -1,20 +1,11 @@
 let
   pkgs = import <nixpkgs> {};
 
-  haskellPackages = pkgs.haskellPackages.override {
-    extension = self: super: {
-      engineIo = self.callPackage ../engine-io {};
+  haskellPackages = pkgs.haskell-ng.packages.ghc7101.override {
+    overrides = self: super: {
+      engine-io = self.callPackage ../engine-io {};
       engineIoSnap = self.callPackage ./. {};
     };
   };
 
-in pkgs.myEnvFun {
-     name = haskellPackages.engineIoSnap.name;
-     buildInputs = [
-       pkgs.curl
-       (haskellPackages.ghcWithPackages (hs: ([
-         hs.cabalInstall
-         hs.hscolour
-       ] ++ hs.engineIoSnap.propagatedNativeBuildInputs)))
-     ];
-   }
+in haskellPackages.engineIoSnap.env
