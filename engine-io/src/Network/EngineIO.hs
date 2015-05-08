@@ -767,9 +767,11 @@ application we simply receive from the socket, and then send the result back to
 the socket. We wrap this all in 'Control.Monad.forever' as this connection
 should never terminate.
 
-> handleSocket :: Socket -> IO ()
-> handleSocket s = forever $ atomically $
->   receive s >>= send s
+> handleSocket :: MonadIO m => Socket -> m SocketApp
+> handleSocket s = return $ SocketApp app onDisconnect
+>   where
+>    app = forever $ STM.atomically $ receive s >>= EIO.send s
+>    onDisconnect = STM.atomically $ send s $ TextPacket "Bye!"
 
 Finally, we add a @main@ function to our application to launch it. I'll use
 @engine-io-snap@ as my server implementation:
@@ -777,7 +779,7 @@ Finally, we add a @main@ function to our application to launch it. I'll use
 > main :: IO ()
 > main = do
 >   eio <- initialize
->   quickHttpServe $ handler eio handleSocket
+>   quickHttpServe $ handler eio handleSocket snapAPI
 
 This means that /any/ URL works as the Engine.IO server, which is sufficient for
 our example. In a real production application, you will probably want to nest
