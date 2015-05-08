@@ -398,7 +398,7 @@ computation that you should serve under the @/engine.io/@ path.
 'handler' takes a function as an argument that is called every time a new
 session is created. This function runs in the @m@ monad, so you have access to
 initial web request, which may be useful for performing authentication or
-collecting cookies. This function then returns a 'ServerApp', describing the
+collecting cookies. This function then returns a 'SocketApp', describing the
 main loop and an action to perform on socket disconnection.
 
 -}
@@ -716,9 +716,9 @@ serveError ServerAPI{..} e = srvTerminateWithResponse 400 "application/json" $
 
 --------------------------------------------------------------------------------
 -- | Create a new 'IO' action to read the socket's raw incoming communications.
--- The result of this call is iteslf an STM action, which will called will return
+-- The result of this call is iteslf an STM action, which when called will return
 -- the next unread incoming packet (or block). This provides you with a separate
--- channel to monitor incoming communications. This may useful to monitor to
+-- channel to monitor incoming communications. It may be useful to monitor this to
 -- determine if the socket has activity.
 --
 -- This is a fairly low level operation, so you will receive *all* packets -
@@ -732,14 +732,14 @@ dupRawReader s = do
 {- $intro
 
 @Network.EngineIO@ is a Haskell of implementation of
-<https://github.com/automattic/engine.io Engine.IO>, a realtime framework for
+<https://github.com/automattic/engine.io Engine.IO>, a real-time framework for
 the web. Engine.IO provides you with an abstraction for doing real-time
 communication between a server and a client. Engine.IO abstracts the framing and
 transport away, so that you can have real-time communication over long-polling
 HTTP requests, which are later upgraded to web sockets, if available.
 
 @Network.EngineIO@ needs to be provided with a 'ServerAPI' in order to be
-ran. 'ServerAPI' informs us how to fetch request headers, write HTTP responses
+run. 'ServerAPI' informs us how to fetch request headers, write HTTP responses
 to the client, and run web socket applications. Hackage contains implementations
 of 'ServerAPI' as:
 
