@@ -1,3 +1,7 @@
+## 1.2.6
+
+* Increased upper-bounds of aeson to < 0.10 and of attoparsec to < 0.14.
+
 ## 1.2.5
 
 * Increased the upper-bound of base to allow < 4.9. Now builds on
