@@ -1,3 +1,8 @@
+## HEAD
+
+* Support decoding payloads coming through XHR polling transport.
+  Previously, this scenario would lead to HTTP 400 responses.
+
 ## 1.2.6
 
 * Increased upper-bounds of aeson to < 0.10 and of attoparsec to < 0.14.
