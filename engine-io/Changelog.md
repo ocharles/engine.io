@@ -1,7 +1,8 @@
-## HEAD
+## 1.2.7
 
 * Support decoding payloads coming through XHR polling transport.
   Previously, this scenario would lead to HTTP 400 responses.
+* Increased upper bound on `either` to < 4.5.
 
 ## 1.2.6
 
