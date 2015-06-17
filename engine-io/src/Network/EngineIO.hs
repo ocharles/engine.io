@@ -208,15 +208,20 @@ newtype Payload = Payload (V.Vector Packet)
 --------------------------------------------------------------------------------
 -- | Parse a stream of bytes into a 'Payload'.
 parsePayload :: Attoparsec.Parser Payload
-parsePayload = Payload <$> go
+parsePayload = Payload <$> (goXHR2 <|> goXHR)
   where
-  go = do
+  goXHR = do
+    len <- AttoparsecC8.decimal <* AttoparsecC8.char ':'
+    packet <- parsePacket' (Attoparsec.take (len - 1)) -- the type consumes 1 byte
+    (V.singleton packet <$ Attoparsec.endOfInput) <|> (V.cons packet <$> goXHR)
+
+  goXHR2 = do
     _ <- Attoparsec.satisfy (`elem` [0, 1])
     len <- parseLength =<< Attoparsec.many1 (Attoparsec.satisfy (inRange (0, 9)))
     _ <- Attoparsec.word8 maxBound
 
     packet <- parsePacket' (Attoparsec.take (len - 1)) -- the type consumes 1 byte
-    (V.singleton packet <$ Attoparsec.endOfInput) <|> (V.cons packet <$> go)
+    (V.singleton packet <$ Attoparsec.endOfInput) <|> (V.cons packet <$> goXHR2)
 
   parseLength bytes = do
     guard (length bytes <= 319)
