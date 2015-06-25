@@ -511,13 +511,13 @@ freshSession eio socketHandler api supportsBinary = do
              return Nothing
         ]
 
-    case mMessage of
-      Just (Packet Close _) ->
-        return ()
+    -- If we *received* a message, then we can reset the ping timer.
+    for_ mMessage (const (STMDelay.updateDelay pingTimeoutDelay (pingTimeout * 1000000)))
 
-      _ -> do
-        STMDelay.updateDelay pingTimeoutDelay (pingTimeout * 1000000)
-        loop
+    -- If we received a close message, terminate. Otherwise, loop.
+    case mMessage of
+      Just (Packet Close _) -> return ()
+      _ -> loop
 
   _ <- liftIO $ Async.async $ do
     _ <- Async.waitAnyCatchCancel [ userSpace, brain, heartbeat ]
