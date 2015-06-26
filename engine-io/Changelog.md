@@ -1,3 +1,13 @@
+## 1.2.8
+
+* Fixed a bug in the heartbeat monitor. The heartbeat thread exists to ensure
+  that all connections are still active, so we can detect when a long-polling
+  connection is closed. However, older versions of `engine-io`, the timer would
+  be reset whenever *we* sent the client a message, rather than only when we
+  *received* a message from the client. This meant that for high-traffic
+  applications, old connections might never be removed, resulting in a memory
+  leak.
+
 ## 1.2.7
 
 * Support decoding payloads coming through XHR polling transport.
