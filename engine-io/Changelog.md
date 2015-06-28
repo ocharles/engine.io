@@ -1,3 +1,8 @@
+## 1.2.9
+
+* Same changes as 1.2.8, but the 1.2.8 release was formed incorrectly and didn't
+  compile.
+
 ## 1.2.8
 
 * Fixed a bug in the heartbeat monitor. The heartbeat thread exists to ensure

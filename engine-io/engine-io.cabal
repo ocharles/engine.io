@@ -1,5 +1,5 @@
 name: engine-io
-version: 1.2.8
+version: 1.2.9
 synopsis: A Haskell implementation of Engine.IO
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
