@@ -1,3 +1,7 @@
+## 1.3.3
+
+* Increase upper-bound of `vector` to < 0.12.
+
 ## 1.3.2
 
 * Increased upper-bounds of aeson to < 0.10 and of attoparsec to < 0.14.
