@@ -1,3 +1,7 @@
+## 1.2.10
+
+* Increase upper-bound of `vector` to < 0.12.
+
 ## 1.2.9
 
 * Same changes as 1.2.8, but the 1.2.8 release was formed incorrectly and didn't
