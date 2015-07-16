@@ -1,16 +1,13 @@
-{ cabal, aeson, engineIo, engineIoSnap, snapServer, snapCors, socketIo, stm, text
+{ mkDerivation, aeson, engine-io, engine-io-snap, snap-server, snap-cors,
+socket-io, stm, text, stdenv
 }:
 
-cabal.mkDerivation (self: {
+mkDerivation {
   pname = "chat-example";
   version = "1.0.0";
   src = ./.;
   buildDepends = [
-    aeson engineIo engineIoSnap snapCors snapServer socketIo text
+    aeson engine-io engine-io-snap snap-cors snap-server socket-io text
   ];
-  meta = {
-    homepage = "http://github.com/ocharles/engine.io";
-    license = self.stdenv.lib.licenses.bsd3;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  license = stdenv.lib.licenses.bsd3;
+}
