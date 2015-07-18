@@ -48,3 +48,24 @@ Executable chat-yesod
     template-haskell
   main-is: MainYesod.hs
   ghc-options: -Wall -O2 -threaded
+
+Executable chat-wai
+  default-language: Haskell2010
+  build-depends:
+    aeson,
+    base,
+    engine-io,
+    wai,
+    wai-app-static,
+    warp,
+    engine-io-wai,
+    socket-io,
+    stm,
+    text,
+    transformers,
+    system-filepath,
+    wai-util,
+    http-types
+  main-is: MainWai.hs
+  other-modules: Paths_chat
+  ghc-options: -Wall -O2 -threaded

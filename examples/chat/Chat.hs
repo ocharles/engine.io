@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Chat (server, ServerState (..)) where
 
@@ -8,7 +9,6 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Aeson ((.=))
 import Data.Foldable (mapM_)
 
-import Control.Applicative
 import qualified Control.Concurrent.STM as STM
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
