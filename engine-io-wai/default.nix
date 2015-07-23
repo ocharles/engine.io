@@ -4,7 +4,7 @@
 }:
 mkDerivation {
   pname = "engine-io-wai";
-  version = "1.0.0";
+  version = "1.0.1";
   src = ./.;
   buildDepends = [
     base bytestring conduit conduit-extra engine-io http-types text
@@ -13,3 +13,4 @@ mkDerivation {
   ];
   license = stdenv.lib.licenses.bsd3;
 }
+
