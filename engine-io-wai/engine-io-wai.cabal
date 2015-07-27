@@ -1,5 +1,5 @@
 name: engine-io-wai
-version: 1.0.1
+version: 1.0.2
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
 license-file: LICENSE
@@ -28,7 +28,9 @@ library
         websockets >= 0.8 && < 0.10,
         wai-websockets >= 3 && < 3.1,
         mtl >= 2 && < 2.3,
-        transformers >= 0.4 && < 0.5,
+        either >= 4,
+        transformers >= 0.2 && < 0.5,
+        transformers-compat >= 0.4,
         attoparsec >= 0.13 && < 0.14
 
     hs-source-dirs: src

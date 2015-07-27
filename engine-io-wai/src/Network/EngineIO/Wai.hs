@@ -11,10 +11,10 @@ module Network.EngineIO.Wai (
 
 
 import Network.Wai
-import Control.Applicative
-import Control.Monad.Except
+import Control.Applicative (Applicative)
 import Control.Monad.Reader
-import Control.Monad.Trans.Except
+import Control.Monad.Error.Class
+import Control.Monad.Trans.Either
 import Control.Arrow (second)
 import Data.Maybe (maybeToList)
 import Data.ByteString.Lazy (toStrict)
@@ -35,13 +35,13 @@ import qualified Network.WebSockets as WS
 
 
 newtype WaiMonad a = WaiMonad {
-    runWaiMonad :: ExceptT Response (ReaderT Request IO) a
+    runWaiMonad :: EitherT Response (ReaderT Request IO) a
     } deriving (Monad, Functor, Applicative, MonadReader Request, MonadError Response, MonadIO)
 
 
 toWaiApplication :: WaiMonad a -> Application
 toWaiApplication sHandler req respond = do
-    socket <- runReaderT (runExceptT (runWaiMonad sHandler)) req
+    socket <- runReaderT (runEitherT (runWaiMonad sHandler)) req
     case socket of
         Left response -> respond response
         Right _ -> respond $ responseLBS status200 [("Content-Type", "text/html")] $ encodeUtf8 $ fromStrict ""
@@ -64,7 +64,7 @@ waiAPI = EIO.ServerAPI
         b <- liftIO $ WAI.lazyRequestBody req
         return (parseOnly p $ toStrict b)
 
-    , EIO.srvGetRequestMethod = fmap (WAI.requestMethod) ask
+    , EIO.srvGetRequestMethod = fmap WAI.requestMethod ask
 
     , EIO.srvRunWebSocket = \app -> do
         req <- ask
