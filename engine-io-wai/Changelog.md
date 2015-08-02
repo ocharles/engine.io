@@ -1,3 +1,7 @@
+## 1.0.3
+
+* Lower lower bound for attoparsec.
+
 ## 1.0.2
 
 * Switch ExceptT to EitherT and lower transformers contraint to support.
