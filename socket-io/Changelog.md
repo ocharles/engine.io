@@ -1,3 +1,7 @@
+## 1.3.4
+
+* Increased the upper-bound of aeson to allow < 0.11.
+
 ## 1.3.3
 
 * Increase upper-bound of `vector` to < 0.12.
