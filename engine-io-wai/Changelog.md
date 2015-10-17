@@ -1,3 +1,7 @@
+## 1.0.4
+
+* Increased the upper-bound of http-types to allow < 0.10.
+
 ## 1.0.3
 
 * Lower lower bound for attoparsec.
