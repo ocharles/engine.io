@@ -1,3 +1,7 @@
+## 1.0.3
+
+* Increased the upper-bound of http-types to allow < 0.10.
+
 ## 1.0.2
 
 * Increased the upper-bound of base to allow < 4.9. Now builds on
