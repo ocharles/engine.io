@@ -1,3 +1,7 @@
+## 1.0.5
+
+* Increased the upper-bound of `wai` to < 3.3.
+
 ## 1.0.4
 
 * Increased the upper-bound of http-types to allow < 0.10.
