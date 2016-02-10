@@ -1,6 +1,10 @@
+## 1.3.5
+
+* Increase upper-bound of `aeson` to < 0.12.
+
 ## 1.3.4
 
-* Increased the upper-bound of aeson to allow < 0.11.
+* Increased the upper-bound of `aeson` to allow < 0.11.
 
 ## 1.3.3
 
