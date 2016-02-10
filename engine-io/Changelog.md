@@ -1,3 +1,7 @@
+## 1.2.13
+
+* Increased the upper-bound of `aeson` to allow < 0.12.
+
 ## 1.2.12
 
 * Increased the upper-bound of `async` to allow < 2.2.
