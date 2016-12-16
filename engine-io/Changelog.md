@@ -1,3 +1,7 @@
+## 1.2.14
+
+* Increased the upper-bound of `base` and `transformers`.
+
 ## 1.2.13
 
 * Increased the upper-bound of `aeson` to allow < 0.12.
