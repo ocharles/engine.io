@@ -1,3 +1,7 @@
+## 1.2.15
+
+* Increased the upper-bound of `aeson`, `vector` and `websockets`.
+
 ## 1.2.14
 
 * Increased the upper-bound of `base` and `transformers`.

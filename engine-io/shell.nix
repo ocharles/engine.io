@@ -11,7 +11,7 @@ let
       }:
       mkDerivation {
         pname = "engine-io";
-        version = "1.2.11";
+        version = "1.2.15";
         src = ./.;
         libraryHaskellDepends = [
           aeson async attoparsec base base64-bytestring bytestring either
@@ -27,7 +27,7 @@ let
                        then pkgs.haskellPackages
                        else pkgs.haskell.packages.${compiler};
 
-  drv = haskellPackages.callPackage f { async = haskellPackages.async_2_1_0; };
+  drv = haskellPackages.callPackage f {};
 
 in
 

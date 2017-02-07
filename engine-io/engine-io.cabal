@@ -1,5 +1,5 @@
 name: engine-io
-version: 1.2.14
+version: 1.2.15
 synopsis: A Haskell implementation of Engine.IO
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
@@ -27,7 +27,7 @@ library
    RankNTypes, OverloadedStrings, RecordWildCards
 
   build-depends:
-    aeson >=0.7 && <0.12,
+    aeson >=0.7 && <1.2,
     async >=2.0 && <2.2,
     attoparsec >=0.11 && <0.14,
     base >=4.6 && <4.10,
@@ -42,8 +42,8 @@ library
     text >=0.11 && <1.3,
     transformers >=0.2 && <0.6,
     unordered-containers >=0.2 && <0.3,
-    vector >=0.10 && <0.12,
-    websockets >=0.8 && <0.10
+    vector >=0.10 && <0.13,
+    websockets >=0.8 && <0.11
 
   hs-source-dirs: src
   default-language: Haskell2010
