@@ -1,3 +1,7 @@
+## 1.3.7
+
+* Increased the upper-bound of `aeson` and `vector`.
+
 ## 1.3.6
 
 * Increased the upper-bound of `base` and `transformers`.
