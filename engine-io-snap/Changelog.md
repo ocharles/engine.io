@@ -1,3 +1,9 @@
+## 1.0.4
+
+* Increased the upper-bound of `base`, `snap-core`, `websockets` and `websockets-snap`.
+* Snap 1.0 is now required.
+* Use `lifted-base` instead of `MonadCatchIO-transformers`.
+
 ## 1.0.3
 
 * Increased the upper-bound of base to allow < 4.9. Now builds on

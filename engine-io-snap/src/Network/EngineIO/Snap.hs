@@ -1,10 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.EngineIO.Snap (snapAPI) where
 
-import Control.Applicative
-
-import qualified Control.Monad.CatchIO as MonadCatchIO
-import qualified Data.Attoparsec.Enumerator as Attoparsec
+import qualified Control.Exception.Lifted as MonadCatchIO
+import qualified System.IO.Streams.Attoparsec as IOStreams
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Map.Lazy as LMap
@@ -27,9 +25,9 @@ snapAPI = EIO.ServerAPI
         <$> Snap.getQueryParams
 
   , EIO.srvParseRequestBody =
-      fmap (either (\e@Attoparsec.ParseError{} -> Left (show e))
+      fmap (either (\e@IOStreams.ParseException{} -> Left (show e))
                    Right) .
-      MonadCatchIO.try . Snap.runRequestBody . Attoparsec.iterParser
+      MonadCatchIO.try . Snap.runRequestBody . IOStreams.parseFromStream
 
   , EIO.srvGetRequestMethod = do
       m <- Snap.getsRequest Snap.rqMethod
