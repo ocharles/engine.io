@@ -1,3 +1,9 @@
+## 1.2.16
+
+### Other Changes
+
+* Increased the upper-bound of `aeson` to < 1.2.
+
 ## 1.2.15
 
 * Increased the upper-bound of `aeson`, `vector` and `websockets`.
