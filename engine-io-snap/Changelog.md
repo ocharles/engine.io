@@ -1,3 +1,7 @@
+## 1.0.5
+
+* Bump upper-bound of base, io-streams and websockets
+
 ## 1.0.4
 
 * Increased the upper-bound of `base`, `snap-core`, `websockets` and `websockets-snap`.
