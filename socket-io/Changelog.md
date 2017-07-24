@@ -1,3 +1,7 @@
+## 1.3.8
+
+* Increased the bound of `aeson` and `base`.
+
 ## 1.3.7
 
 * Increased the upper-bound of `aeson` and `vector`.
