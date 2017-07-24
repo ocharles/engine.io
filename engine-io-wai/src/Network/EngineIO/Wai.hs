@@ -4,7 +4,7 @@
 
 
 module Network.EngineIO.Wai (
-    WaiMonad,
+    WaiMonad (..),
     toWaiApplication,
     waiAPI
     ) where
@@ -18,8 +18,6 @@ import Control.Monad.Trans.Either
 import Control.Arrow (second)
 import Data.Maybe (maybeToList)
 import Data.ByteString.Lazy (toStrict)
-import Data.Text.Lazy.Encoding (encodeUtf8)
-import Data.Text.Lazy (fromStrict)
 import Data.Attoparsec.ByteString (parseOnly)
 import Network.HTTP.Types.Header (hContentType)
 
@@ -42,9 +40,9 @@ newtype WaiMonad a = WaiMonad {
 toWaiApplication :: WaiMonad a -> Application
 toWaiApplication sHandler req respond = do
     socket <- runReaderT (runEitherT (runWaiMonad sHandler)) req
-    case socket of
-        Left response -> respond response
-        Right _ -> respond $ responseLBS status200 [("Content-Type", "text/html")] $ encodeUtf8 $ fromStrict ""
+    respond $ case socket of
+        Left response -> response
+        Right _ -> responseLBS status200 [("Content-Type", "text/html")] ""
 
 
 --------------------------------------------------------------------------------
