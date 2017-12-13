@@ -1,3 +1,12 @@
+## 1.0.7
+
+* Update dependencies
+* Expose WaiMonad fields
+
+## 1.0.6
+
+* Update dependencies
+
 ## 1.0.5
 
 * Increased the upper-bound of `wai` to < 3.3.

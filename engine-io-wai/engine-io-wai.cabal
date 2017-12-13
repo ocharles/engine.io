@@ -1,5 +1,6 @@
 name: engine-io-wai
-version: 1.0.6
+version: 1.0.7
+synopsis: An @engine-io@ @ServerAPI@ that is compatible with @Wai@
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
 license-file: LICENSE
