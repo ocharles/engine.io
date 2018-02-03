@@ -1,14 +1,14 @@
 { mkDerivation, aeson, async, attoparsec, base, base64-bytestring
-, bytestring, either, free, monad-loops, mwc-random, stdenv, stm
+, bytestring, errors, free, monad-loops, mwc-random, stdenv, stm
 , stm-delay, text, transformers, unordered-containers, vector
 , websockets
 }:
 mkDerivation {
   pname = "engine-io";
-  version = "1.2.3";
+  version = "1.2.18";
   src = ./.;
-  buildDepends = [
-    aeson async attoparsec base base64-bytestring bytestring either
+  libraryHaskellDepends = [
+    aeson async attoparsec base base64-bytestring bytestring errors
     free monad-loops mwc-random stm stm-delay text transformers
     unordered-containers vector websockets
   ];

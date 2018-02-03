@@ -52,13 +52,13 @@ import Prelude hiding (any)
 import Control.Applicative
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, newMVar, withMVar)
+import Control.Error (exceptT, throwE)
 import Control.Exception (SomeException(SomeException), try)
 import Control.Monad (MonadPlus, forever, guard, mzero, replicateM, when)
-import Control.Monad.Trans.Iter (cutoff, delay, retract)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Loops (unfoldM)
 import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Either (eitherT, left)
+import Control.Monad.Trans.Iter (cutoff, delay, retract)
 import Control.Monad.Trans.Maybe (runMaybeT)
 import Data.Aeson ((.=))
 import Data.Char (digitToInt, intToDigit)
@@ -410,8 +410,8 @@ main loop and an action to perform on socket disconnection.
 handler :: MonadIO m => EngineIO -> (Socket -> m SocketApp) -> ServerAPI m -> m ()
 handler eio socketHandler api@ServerAPI{..} = do
   queryParams <- srvGetQueryParams
-  eitherT (serveError api) return $ do
-    reqTransport <- maybe (left TransportUnknown) return $ do
+  exceptT (serveError api) return $ do
+    reqTransport <- maybe (throwE TransportUnknown) return $ do
       [t] <- HashMap.lookup "transport" queryParams
       parseTransportType (Text.decodeUtf8 t)
 
@@ -419,11 +419,11 @@ handler eio socketHandler api@ServerAPI{..} = do
       for (HashMap.lookup "sid" queryParams) $ \sids -> do
         sid <- case sids of
                  [sid] -> return sid
-                 _ -> left SessionIdUnknown
+                 _ -> throwE SessionIdUnknown
 
         mSocket <- liftIO (STM.atomically (HashMap.lookup sid <$> getOpenSockets eio))
         case mSocket of
-          Nothing -> left SessionIdUnknown
+          Nothing -> throwE SessionIdUnknown
           Just s -> return s
 
     supportsBinary <-
@@ -431,7 +431,7 @@ handler eio socketHandler api@ServerAPI{..} = do
         Just ["1"] -> return False
         Just ["0"] -> return True
         Nothing    -> return True
-        _          -> left BadRequest
+        _          -> throwE BadRequest
 
     case socket of
       Just s -> do
@@ -441,7 +441,7 @@ handler eio socketHandler api@ServerAPI{..} = do
             | reqTransport == Polling -> lift (handlePoll api transport supportsBinary)
             | reqTransport == Websocket -> lift (upgrade api s)
 
-          _ -> left BadRequest
+          _ -> throwE BadRequest
 
       Nothing ->
         lift (freshSession eio socketHandler api supportsBinary)

@@ -1,3 +1,9 @@
+## 1.2.18
+
+### Other Changes
+
+* Switch from `either` to `errors`.
+
 ## 1.2.17
 
 ### Other Changes
