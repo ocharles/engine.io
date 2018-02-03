@@ -600,7 +600,7 @@ upgrade ServerAPI{..} socket = srvRunWebSocket go
   receivePacket conn = do
     msg <- WebSockets.receiveDataMessage conn
     case msg of
-      WebSockets.Text bytes ->
+      WebSockets.Text bytes _ ->
         case Attoparsec.parseOnly parsePacket (LBS.toStrict bytes)  of
           Left ex -> do
             putStrLn $ "Malformed packet received: " ++ show bytes ++ " (" ++ show ex ++ ")"

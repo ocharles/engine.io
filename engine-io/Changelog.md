@@ -1,3 +1,9 @@
+## 1.2.19
+
+### Other Changes
+
+* Increased the lower-bound of `websockets` to 0.11.
+
 ## 1.2.18
 
 ### Other Changes

@@ -1,5 +1,5 @@
 name: engine-io
-version: 1.2.18
+version: 1.2.19
 synopsis: A Haskell implementation of Engine.IO
 homepage: http://github.com/ocharles/engine.io
 license: BSD3
@@ -43,7 +43,7 @@ library
     transformers >=0.2 && <0.6,
     unordered-containers >=0.2 && <0.3,
     vector >=0.10 && <0.13,
-    websockets >=0.8 && <0.13
+    websockets >=0.11 && <0.13
 
   hs-source-dirs: src
   default-language: Haskell2010
