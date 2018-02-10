@@ -1,6 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 
 module Network.EngineIO.Wai (
@@ -10,36 +10,36 @@ module Network.EngineIO.Wai (
     ) where
 
 
-import Network.Wai
-import Control.Applicative (Applicative)
-import Control.Monad.Reader
-import Control.Monad.Error.Class
-import Control.Monad.Trans.Either
-import Control.Arrow (second)
-import Data.Maybe (maybeToList)
-import Data.ByteString.Lazy (toStrict)
-import Data.Attoparsec.ByteString (parseOnly)
-import Network.HTTP.Types.Header (hContentType)
+import           Control.Applicative            (Applicative)
+import           Control.Arrow                  (second)
+import           Control.Monad.Error.Class
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import           Data.Attoparsec.ByteString     (parseOnly)
+import           Data.ByteString.Lazy           (toStrict)
+import           Data.Maybe                     (maybeToList)
+import           Network.HTTP.Types.Header      (hContentType)
+import           Network.Wai
 
 
-import Network.HTTP.Types.Status as ST
-import Network.HTTP.Types.URI as URI
-import qualified Data.ByteString as BS
-import qualified Network.EngineIO as EIO
-import qualified Data.HashMap.Strict as HashMap
-import qualified Network.Wai as WAI
+import qualified Data.ByteString                as BS
+import qualified Data.HashMap.Strict            as HashMap
+import qualified Network.EngineIO               as EIO
+import           Network.HTTP.Types.Status      as ST
+import           Network.HTTP.Types.URI         as URI
+import qualified Network.Wai                    as WAI
 import qualified Network.Wai.Handler.WebSockets as WaiWS
-import qualified Network.WebSockets as WS
+import qualified Network.WebSockets             as WS
 
 
 newtype WaiMonad a = WaiMonad {
-    runWaiMonad :: EitherT Response (ReaderT Request IO) a
+    runWaiMonad :: ExceptT Response (ReaderT Request IO) a
     } deriving (Monad, Functor, Applicative, MonadReader Request, MonadError Response, MonadIO)
 
 
 toWaiApplication :: WaiMonad a -> Application
 toWaiApplication sHandler req respond = do
-    socket <- runReaderT (runEitherT (runWaiMonad sHandler)) req
+    socket <- runReaderT (runExceptT (runWaiMonad sHandler)) req
     respond $ case socket of
         Left response -> response
         Right _ -> responseLBS status200 [("Content-Type", "text/html")] ""

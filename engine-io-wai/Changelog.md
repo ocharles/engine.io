@@ -1,3 +1,8 @@
+## 1.0.8
+
+* Replace EitherT with ExceptT
+* Increased the upper-bound of `base` to < 4.11.
+
 ## 1.0.7
 
 * Update dependencies
