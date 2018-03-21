@@ -1,3 +1,11 @@
+## 1.2.20
+
+### Other Changes
+
+* Increased the upper-bound of `aeson` to < 1.4.
+* Increased the upper-bound of `async` to < 2.3.
+* Increased the upper-bound of `free` to < 5.1.
+
 ## 1.2.19
 
 ### Other Changes
