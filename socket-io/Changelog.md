@@ -1,3 +1,7 @@
+## 1.3.9
+
+* Increased the bound of `aeson`.
+
 ## 1.3.8
 
 * Increased the bound of `aeson` and `base`.
