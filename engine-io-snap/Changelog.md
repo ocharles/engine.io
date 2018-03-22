@@ -1,3 +1,7 @@
+## 1.0.6
+
+* Bump upper-bound of `io-streams`.
+
 ## 1.0.5
 
 * Bump upper-bound of base, io-streams and websockets
