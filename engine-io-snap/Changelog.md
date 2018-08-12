@@ -1,4 +1,4 @@
-## Next
+## 1.0.7
 
 * Bump upper-bound of `base`.
 * Bump upper-bound of `containers`.
