@@ -1,4 +1,4 @@
-## Next
+## 1.3.10
 
 * Increased the upper bound of `aeson`.
 * Increased the upper bound of `base`.
