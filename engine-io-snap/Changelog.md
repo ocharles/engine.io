@@ -1,3 +1,8 @@
+## Next
+
+* Bump upper-bound of `base`.
+* Bump upper-bound of `containers`.
+
 ## 1.0.6
 
 * Bump upper-bound of `io-streams`.
