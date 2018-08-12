@@ -1,3 +1,13 @@
+## Next
+
+### Other Changes
+
+* Increased the upper-bound of `aeson` to < 1.5.
+* Increased the upper-bound of `base` to < 4.12.
+* Increased the upper-bound of `errors` to < 2.4.
+* Increased the upper-bound of `free` to < 5.2.
+* Increased the upper-bound of `mwc-random` to < 0.15.
+
 ## 1.2.20
 
 ### Other Changes
