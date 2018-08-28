@@ -1,3 +1,8 @@
+## 1.0.9
+
+* Increased the upper-bound of `http-types` to < 0.13
+* Increased the upper-bound of `base` to < 4.12.
+
 ## 1.0.8
 
 * Replace EitherT with ExceptT
