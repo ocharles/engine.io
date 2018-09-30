@@ -1,3 +1,8 @@
+## Unreleased
+
+* Increased the upper bound of `base`.
+* Increased the upper bound of `stm`.
+
 ## 1.3.10
 
 * Increased the upper bound of `aeson`.
