@@ -1,4 +1,4 @@
-## Unreleased
+## 1.3.11 -- 2018-09-30
 
 * Increased the upper bound of `base`.
 * Increased the upper bound of `stm`.
