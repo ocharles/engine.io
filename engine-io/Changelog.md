@@ -1,3 +1,10 @@
+## Unreleased
+
+### Other Changes
+
+* Increased the upper-bound of `base` to < 4.13.
+* Increased the upper-bound of `stm` to < 2.6.
+
 ## 1.2.21 -- 2018-08-12
 
 ### Other Changes
