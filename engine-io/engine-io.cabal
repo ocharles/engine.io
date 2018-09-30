@@ -30,7 +30,7 @@ library
     aeson >=0.7 && <1.5,
     async >=2.0 && <2.3,
     attoparsec >=0.11 && <0.14,
-    base >=4.6 && <4.13,
+    base >=4.8 && <4.13,
     base64-bytestring >=1.0 && <1.1,
     bytestring >=0.10.2.0 && <0.11,
     errors >= 2.0.0 && <2.4,
