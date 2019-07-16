@@ -1,3 +1,7 @@
+## 1.0.10
+
+* Increased the upper-bound of `base` to < 4.13.
+
 ## 1.0.9
 
 * Increased the upper-bound of `http-types` to < 0.13
