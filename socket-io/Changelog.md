@@ -1,3 +1,9 @@
+## Unreleased
+
+* Increased the upper bound of `aeson` to < 1.6.
+* Increased the upper bound of `base` to < 4.15.
+* Increased the upper bound of `bytestring` to < 0.12.
+
 ## 1.3.11 -- 2018-09-30
 
 * Increased the upper bound of `base`.
