@@ -1,4 +1,4 @@
-## Unreleased
+## 1.3.12 -- 2020-12-14
 
 * Increased the upper bound of `aeson` to < 1.6.
 * Increased the upper bound of `base` to < 4.15.
