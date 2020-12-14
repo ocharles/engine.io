@@ -1,3 +1,13 @@
+## Unreleased
+
+### Other Changes
+
+* Increased the upper-bound of `aeson` to < 1.6.
+* Increased the upper-bound of `base64-bytestring` to < 1.3.
+* Increased the upper-bound of `base` to < 4.15.
+* Increased the upper-bound of `bytestring` to < 0.12.
+* Increased the upper-bound of `mwc-random` to < 0.16.
+
 ## 1.2.22 -- 2018-09-30
 
 ### Other Changes
